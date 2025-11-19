@@ -73,6 +73,13 @@ private:
   double MonoDirectionalAirResistanceModel(const double &s, const double &v, const double &angle);
 
   double AngleToGimbalX(const double &yaw, const double &cur_yaw);
+
+  void ChangeOfAngle(const HitInfo &Hit_info,
+                      const double &Cur_yaw_,
+                      const double &Cur_pitch_,
+                      const double &Cur_roll_,
+                      double &gimbal_cmd_yaw_diff
+                      double &gimbal_cmd_pitch_diff);
   
   void GetBestPose(const auto_aim_interfaces::msg::Target &target,
                           const double &dt,
@@ -127,6 +134,7 @@ private:
   double Cur_V_;
   int up_overflow_count_;
   int down_overflow_count_;
+  double cur_roll_;//在这里增加了roll角
   double cur_yaw_;
   double cur_pitch_;
   double armor_w_;

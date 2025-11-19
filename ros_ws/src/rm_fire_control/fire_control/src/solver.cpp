@@ -36,7 +36,7 @@ Solver::Solver(std::weak_ptr<rclcpp::Node> n)
   MaxTrackingVYaw1_ = node->declare_parameter<double>("max_tracking_v_yaw_1", 1.1);   //最大甲板跟踪角速度
   MaxTrackingVYaw2_ = node->declare_parameter<double>("max_tracking_v_yaw_2", 6.0);
   MaxOrientationAngle_ = (node->declare_parameter<double>("max_orientation_angle", 58.8) / 180.0 * M_PI);  //最大甲板跟踪角 角度转弧度
-  MaxTrackingError_ = node->declare_parameter<double>("max_tracking_error", 0.8);  //1为可以打装甲板边缘
+  MaxTrackingError_ = node->declare_parameter<double>("max_tracking_error", 2.0);  //1为可以打装甲板边缘
   MaxOutError_ = node->declare_parameter<double>("max_out_error", 0.6);  //装甲板位置出现的最大偏差
 
   
@@ -58,6 +58,7 @@ fire_control_interfaces::msg::GimbalCmd Solver::Solve(const auto_aim_interfaces:
   node_shared_ = node_.lock();
   
   // Get current yaw and pitch of gimbal
+  //这里我增加了roll of gimbal
   try {
     auto gimbal_tf =
       tf2_buffer->lookupTransform(target.header.frame_id, "gimbal_link", tf2::TimePointZero);
@@ -65,9 +66,9 @@ fire_control_interfaces::msg::GimbalCmd Solver::Solve(const auto_aim_interfaces:
 
     tf2::Quaternion tf_q;
     tf2::fromMsg(msg_q, tf_q);
-    double roll;
-    tf2::Matrix3x3(tf_q).getRPY(roll, cur_pitch_, cur_yaw_);
-    cur_pitch_ = -cur_pitch_;
+    // double roll;//在这里把roll角写进具体的参数
+    tf2::Matrix3x3(tf_q).getRPY(cur_roll_, cur_pitch_, cur_yaw_);
+    cur_pitch_ = -cur_pitch_;//这里不好说要不要改//？？
   } catch (tf2::TransformException &ex) {
     RCLCPP_ERROR(node_shared_->get_logger(), "armor_solver: %s", ex.what());
     throw ex;
@@ -209,15 +210,16 @@ fire_control_interfaces::msg::GimbalCmd Solver::Solve(const auto_aim_interfaces:
   } 
   //弧度制
   gimbal_cmd.yaw = hit_aim_info.yaw;
-  gimbal_cmd.pitch = hit_aim_info.pitch; 
+  gimbal_cmd.pitch = hit_aim_info.pitch; //这里要加一个hit_aim_info.roll用来下面计算
   gimbal_cmd.distance = hit_aim_info.distance;
 
   gimbal_cmd.aim_x = chosen_aim_pose.position.x();
   gimbal_cmd.aim_y = chosen_aim_pose.position.y();
   gimbal_cmd.aim_z = chosen_aim_pose.position.z();
   //  change of angle
-  gimbal_cmd.yaw_diff = hit_aim_info.yaw - cur_yaw_;
-  gimbal_cmd.pitch_diff = - (hit_aim_info.pitch - cur_pitch_);
+  ChangeOfAngle(hit_aim_info, cur_yaw_, cur_pitch_, cur_roll_, gimbal_cmd.yaw_diff, gimbal_cmd.pitch_diff);
+  // gimbal_cmd.yaw_diff = hit_aim_info.yaw - cur_yaw_;//atan(tan(-(hit_aim_info.yaw-cur_yaw_)) * cos(cur_roll_) - (sin(cur_roll_) * tan(hit_aim_info.pitch-cur_pitch_)) / cos(-(hit_aim_info.yaw-cur_yaw_)));
+  // gimbal_cmd.pitch_diff = - (hit_aim_info.pitch - cur_pitch_);//asin(sin(hit_aim_info.pitch-cur_pitch_) * cos(cur_roll_) + sin(-(hit_aim_info.yaw-cur_yaw_)) * cos(hit_aim_info.pitch-cur_pitch_) * sin(cur_roll_));
   // 加上开火延迟（拨弹延迟等）用于火控
   dt += ReceiveToFireDelay_;
 
@@ -271,6 +273,7 @@ std::vector<Pose> Solver::GetArmorPoses(const Eigen::Vector3d &target_center,
 }
 
 //calculate the suitable gimbal pose
+//这里需要修改
 void Solver::CalcYawAndPitch(const Eigen::Vector3d &position, double &yaw, double &pitch)
 {
   yaw = atan2(position.y(), position.x());
@@ -318,6 +321,26 @@ double Solver::AngleToGimbalX(const double &yaw, const double &cur_yaw)
   return std::atan2(std::sin(yaw - cur_yaw), std::cos(yaw - cur_yaw));
 }
 
+void Solver::ChangeOfAngle(const HitInfo &Hit_info,
+                            const double &Cur_yaw_,
+                            const double &Cur_pitch_,
+                            const double &Cur_roll_,
+                            double &gimbal_cmd_yaw_diff
+                            double &gimbal_cmd_pitch_diff
+                          )
+{
+  gimbal_cmd_yaw_diff = std::atan2(
+    std::sin(Hit_info.yaw - Cur_yaw_) * std::cos(Cur_roll_) -
+    std::tan(Hit_info.pitch - Cur_pitch_) * std::sin(Cur_roll_),
+    std::cos(Hit_info.yaw - Cur_yaw_)
+  );
+
+  gimbal_cmd_pitch_diff = std::asin(
+    std::sin(Hit_info.pitch - Cur_pitch_) * std::cos(Cur_roll_) +
+    std::cos(Hit_info.pitch - Cur_pitch_) * std::sin(Hit_info.yaw - Cur_yaw_) * std::sin(Cur_roll_)
+  );
+}
+
 void Solver::GetBestPose(const auto_aim_interfaces::msg::Target &target,
                           const double &dt,
                           const double &max_orientation_angle,
@@ -352,7 +375,7 @@ void Solver::GetBestPose(const auto_aim_interfaces::msg::Target &target,
         best_armor_index = i;
         min_angle_to_x = std::abs(AngleToGimbalX(std::atan2(armor_poses[i].position.y(), armor_poses[i].position.x()), cur_yaw_));
       }
-    }
+    }//插个眼，我感觉这里选板可能会选到侧板
 
   }
   
@@ -370,7 +393,7 @@ void Solver::GetBestPose(const auto_aim_interfaces::msg::Target &target,
         double theta = AngleToGimbalX(armor_poses[i].yaw, cur_yaw_);
         //装甲板到等待角
         double angle = (target.v_yaw > 0.0 ? -max_orientation_angle - theta : theta - max_orientation_angle) - M_PI + max_out_angle;
-        double armor_to_wait = std::atan2(std::sin(angle), std::cos(angle)) + M_PI - max_out_angle;
+        double armor_to_wait = std::atan2(std::sin(angle), std::cos(angle)) + M_PI;
 
         //选择最小角
         if(armor_to_wait  < min_armor_to_wait)
