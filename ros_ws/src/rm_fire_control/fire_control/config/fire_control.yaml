@@ -1,0 +1,29 @@
+/rm_fire_control:
+  ros__parameters:
+    large_armor_width: 0.23  
+    small_armor_width: 0.135
+    large_armor_height: 0.127
+    small_armor_height: 0.125
+    armor_pitch: 15.0
+    s_bias: 0.21
+    z_bias: 0.0
+    k: 0.030  
+    gravity: 9.79
+
+    yaw_motor_res_speed_a: 1.79e-3
+    yaw_motor_res_speed_b: 0.093
+    tranfer_thresh: 5
+    max_tracking_v_yaw_1: 1.1
+    max_tracking_v_yaw_2: 6.0
+    max_orientation_angle: 58.8
+    max_tracking_error: 0.8
+    max_out_error: 0.6
+
+    communite_delay: 0.0
+    receive_to_fire_delay: 0.02
+
+    current_v: 23.0
+
+
+
+  
