@@ -206,19 +206,7 @@ ArmorTrackerNode::ArmorTrackerNode(const rclcpp::NodeOptions & options)
 
 void ArmorTrackerNode::armorsCallback(const auto_aim_interfaces::msg::Armors::SharedPtr armors_msg)
 {
-  // Tranform armor position from image frame to world coordinate
-  for (auto & armor : armors_msg->armors) {
-    geometry_msgs::msg::PoseStamped ps;
-    ps.header = armors_msg->header;
-    ps.pose = armor.pose;
-    try {
-      armor.pose = tf2_buffer_->transform(ps, target_frame_).pose;
-    } catch (const tf2::ExtrapolationException & ex) {
-      RCLCPP_ERROR(get_logger(), "Error while transforming %s", ex.what());
-      return;
-    }
-  }
-
+  
   // Filter abnormal armors
   armors_msg->armors.erase(
     std::remove_if(

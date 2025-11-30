@@ -63,6 +63,11 @@ struct Armor
   std::string classfication_result;
 };
 
+// 在类定义前添加角度常量（单位：弧度）
+constexpr double ANGLE_UP_15 = 15.0 * M_PI / 180.0;
+constexpr double ANGLE_UP_75 = 75.0 * M_PI / 180.0;
+constexpr double ANGLE_DOWN_15 = -15.0 * M_PI / 180.0;
+
 }  // namespace rm_auto_aim
 
 #endif  // ARMOR_DETECTOR__ARMOR_HPP_
