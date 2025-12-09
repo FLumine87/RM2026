@@ -10,8 +10,9 @@
 namespace rm_auto_aim
 {
 
-DetectBullet::DetectBullet(int binary_thres)
-    : binary_thres(binary_thres)
+DetectBullet::DetectBullet(
+int binary_thres,float min_area,float max_area,float min_ratio,float max_ratio)
+: binary_thres(binary_thres),min_area(min_area),max_area(max_area),min_ratio(min_ratio),max_ratio(max_ratio)
 {
 }
 
@@ -28,12 +29,11 @@ bool DetectBullet::isBulletContour(const std::vector<cv::Point>& contour)
     // 基本判断：面积、圆度
     if (contour.size() < 5) return false;
     float area = cv::contourArea(contour);
-    if (area < 10 || area > 500) return false; // 过滤太小/太大的区域
+    if (area < min_area || area > max_area) return false; // 过滤太小/太大的区域
 
     cv::RotatedRect ellipse = cv::fitEllipse(contour);
     float ratio = ellipse.size.width / ellipse.size.height;
-    if (ratio < 0.7 || ratio > 1.3) return false; // 近似圆形
-
+    if (ratio < min_ratio || ratio > max_ratio) return false; // 近似圆形
     return true;
 }
 

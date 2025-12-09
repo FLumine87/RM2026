@@ -23,7 +23,12 @@ struct Bullet
 class DetectBullet
 {
 public:
-    DetectBullet(int binary_thres = 180);
+    DetectBullet(
+        int binary_thres,
+        float min_area,
+        float max_area,
+        float min_ratio,
+        float max_ratio);
 
     std::vector<Bullet> detect(const cv::Mat& input);
 
@@ -33,6 +38,8 @@ public:
     void drawResults(cv::Mat& img);
 
     int binary_thres;
+    float min_area, max_area;
+    float min_ratio, max_ratio;
 
 private:
     std::vector<std::vector<cv::Point>> findBulletContours(const cv::Mat& binary_img);

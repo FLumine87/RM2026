@@ -217,7 +217,7 @@ void ArmorDetectorNode::imageCallback(const sensor_msgs::msg::Image::ConstShared
           yaw_pnp->setImagePoints(image_points);
 
           // 通过类成员函数调用 getYaw
-          double new_yaw = pnp_solver_->getYaw(yaw_pnp, original_yaw);
+          double new_yaw = pnp_solver_->getYaw(yaw_pnp.get(), original_yaw);
 
           //这里要判断new_yaw是否有效
 

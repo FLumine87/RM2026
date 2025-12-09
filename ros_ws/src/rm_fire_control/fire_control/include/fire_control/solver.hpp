@@ -78,7 +78,7 @@ private:
                       const double &Cur_yaw_,
                       const double &Cur_pitch_,
                       const double &Cur_roll_,
-                      double &gimbal_cmd_yaw_diff
+                      double &gimbal_cmd_yaw_diff,
                       double &gimbal_cmd_pitch_diff);
   
   void GetBestPose(const auto_aim_interfaces::msg::Target &target,
