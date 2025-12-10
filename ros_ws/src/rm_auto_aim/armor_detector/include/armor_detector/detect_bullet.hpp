@@ -28,7 +28,9 @@ public:
         float min_area,
         float max_area,
         float min_ratio,
-        float max_ratio);
+        float max_ratio,
+        bool bullet_visual_debug
+    );
 
     std::vector<Bullet> detect(const cv::Mat& input);
 
@@ -40,6 +42,7 @@ public:
     int binary_thres;
     float min_area, max_area;
     float min_ratio, max_ratio;
+    bool bullet_visual_debug;
 
 private:
     std::vector<std::vector<cv::Point>> findBulletContours(const cv::Mat& binary_img);

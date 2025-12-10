@@ -47,6 +47,7 @@ ArmorDetectorNode::ArmorDetectorNode(const rclcpp::NodeOptions & options)
 
   // 初始化装甲板检测器
   detector_ = initDetector();
+  bullet_detector_ = initBulletDetector();
 
   // 创建装甲板检测结果发布者（使用传感器数据QoS配置）
   armors_pub_ = this->create_publisher<auto_aim_interfaces::msg::Armors>(
@@ -144,6 +145,13 @@ void ArmorDetectorNode::imageCallback(const sensor_msgs::msg::Image::ConstShared
 {
   // 检测图像中的装甲板（相机坐标系）
   auto camera_frame_armors = detectArmors(img_msg);
+  // 检测图像中的弹丸（相机坐标系）
+  auto bullets = detectBullet(img_msg);
+
+  if (debug_ || bullet_debug_) {
+    drawAllResults(img, armors, bullets);
+    result_img_pub_.publish(cv_bridge::CvImage(img_msg->header, "rgb8", img).toImageMsg());
+  }
 
   // 当PnP解算器就绪且处于瞄准任务模式时处理检测结果
   if (pnp_solver_ != nullptr && is_aim_task_) {
@@ -360,7 +368,71 @@ std::vector<Armor> ArmorDetectorNode::detectArmors(
         *cv_bridge::CvImage(img_msg->header, "mono8", all_num_img).toImageMsg());
     }
 
+    // detector_->drawResults(img);
+    // // Draw camera center
+    // cv::circle(img, cam_center_, 5, cv::Scalar(255, 0, 0), 2);
+    // // Draw latency
+    // std::stringstream latency_ss;
+    // latency_ss << "Latency: " << std::fixed << std::setprecision(2) << latency << "ms";
+    // auto latency_s = latency_ss.str();
+    // cv::putText(
+    //   img, latency_s, cv::Point(10, 30), cv::FONT_HERSHEY_SIMPLEX, 1.0, cv::Scalar(0, 255, 0), 2);
+    // result_img_pub_.publish(cv_bridge::CvImage(img_msg->header, "rgb8", img).toImageMsg());
+  }
+
+  return armors;
+}
+
+std::unique_ptr<DetectBullet> ArmorDetectorNode::initDetectBullet()
+{
+  // 声明参数并初始化
+  int bullet_binary_thres = declare_parameter("bullet_binary_thres", 180);
+  float bullet_min_area = declare_parameter("bullet_min_area", 10.0f);
+  float bullet_max_area = declare_parameter("bullet_max_area", 500.0f);
+  float bullet_min_ratio = declare_parameter("bullet_min_ratio", 0.7f);
+  float bullet_max_ratio = declare_parameter("bullet_max_ratio", 1.3f);
+  bool bullet_visual_debug = declare_parameter("bullet_visual_debug", false);
+
+  // 创建弹丸检测器对象
+  auto bullet_detector = std::make_unique<DetectBullet>(
+      bullet_binary_thres, bullet_min_area, bullet_max_area, bullet_min_ratio, bullet_max_ratio, bullet_visual_debug);
+  return bullet_detector;
+}
+
+std::vector<Bullet> ArmorDetectorNode::detectBullet(const sensor_msgs::msg::Image::ConstSharedPtr & img_msg)
+{
+  // ROS图像转OpenCV格式
+  auto img = cv_bridge::toCvShare(img_msg, "rgb8")->image;
+
+  // 动态参数更新
+  bullet_detector_->binary_thres = get_parameter("bullet_binary_thres").as_int();
+  bullet_detector_->min_area = get_parameter("bullet_min_area").as_double();
+  bullet_detector_->max_area = get_parameter("bullet_max_area").as_double();
+  bullet_detector_->min_ratio = get_parameter("bullet_min_ratio").as_double();
+  bullet_detector_->max_ratio = get_parameter("bullet_max_ratio").as_double();
+  bullet_detector_->bullet_visual_debug = get_parameter("bullet_visual_debug").as_bool();
+
+  // 弹丸检测
+  auto bullets = bullet_detector_->detect(img);
+
+  // if (bullet_debug_) {
+  //   bullet_detector_->drawResults(img, bullet_debug_);
+  //   result_img_pub_.publish(cv_bridge::CvImage(img_msg->header, "rgb8", img).toImageMsg());
+  // }
+
+  return bullets;
+}
+
+void ArmorDetectorNode::drawAllResults(cv::Mat& img, const std::vector<Armor>& armors, const std::vector<Bullet>& bullets)
+{
+    // 装甲板可视化
     detector_->drawResults(img);
+    // 弹丸可视化
+    bullet_detector_->drawResults(img, bullet_debug_);
+    // 画相机中心
+    cv::circle(img, cam_center_, 5, cv::Scalar(255, 0, 0), 2);
+    // 画延迟等其它信息
+        detector_->drawResults(img);
     // Draw camera center
     cv::circle(img, cam_center_, 5, cv::Scalar(255, 0, 0), 2);
     // Draw latency
@@ -370,9 +442,7 @@ std::vector<Armor> ArmorDetectorNode::detectArmors(
     cv::putText(
       img, latency_s, cv::Point(10, 30), cv::FONT_HERSHEY_SIMPLEX, 1.0, cv::Scalar(0, 255, 0), 2);
     result_img_pub_.publish(cv_bridge::CvImage(img_msg->header, "rgb8", img).toImageMsg());
-  }
 
-  return armors;
 }
 
 void ArmorDetectorNode::createDebugPublishers()

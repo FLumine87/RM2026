@@ -11,8 +11,8 @@ namespace rm_auto_aim
 {
 
 DetectBullet::DetectBullet(
-int binary_thres,float min_area,float max_area,float min_ratio,float max_ratio)
-: binary_thres(binary_thres),min_area(min_area),max_area(max_area),min_ratio(min_ratio),max_ratio(max_ratio)
+int binary_thres,float min_area,float max_area,float min_ratio,float max_ratio, bool bullet_visual_debug)
+: binary_thres(binary_thres),min_area(min_area),max_area(max_area),min_ratio(min_ratio),max_ratio(max_ratio), bullet_visual_debug(bullet_visual_debug)
 {
 }
 
@@ -66,8 +66,9 @@ std::vector<Bullet> DetectBullet::detect(const cv::Mat& input)
     return bullets;
 }
 
-void DetectBullet::drawResults(cv::Mat& img)
+void DetectBullet::drawResults(cv::Mat& img, bool bullet_visual_debug)
 {
+    if (!bullet_visual_debug) return;
     for (const auto& bullet : bullets)
     {
         cv::circle(img, bullet.center, bullet.radius, cv::Scalar(0, 0, 255), 2);
