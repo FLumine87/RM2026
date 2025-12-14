@@ -27,6 +27,9 @@
 #include "armor_detector/pnp_solver.hpp"
 #include "auto_aim_interfaces/msg/armors.hpp"
 
+#include <tf2_ros/buffer.h>
+#include <tf2_ros/transform_listener.h>
+
 namespace rm_auto_aim
 {
 
@@ -82,6 +85,13 @@ private:
   image_transport::Publisher binary_img_pub_;
   image_transport::Publisher number_img_pub_;
   image_transport::Publisher result_img_pub_;
+
+  std::shared_ptr<tf2_ros::Buffer> tf2_buffer_;       // TF2缓冲区
+  std::shared_ptr<tf2_ros::TransformListener> tf2_listener_;  // TF2监听器
+
+  // 添加相机参数成员变量
+  cv::Mat camera_matrix_;
+  cv::Mat dist_coeffs_;
 };
 
 }  // namespace rm_auto_aim

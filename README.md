@@ -1,7 +1,7 @@
 
 # RM2026 -VANGUARD
 
-RoboMaster 2026 赛季代码库
+华南师范大学 RoboMaster 2026 赛季代码库
 
 ## 📁 项目架构
 
@@ -127,9 +127,9 @@ git tag v1.0.1
 
 
 
-## 📄 许可证
+<!-- ## 📄 许可证
 
-本项目采用 MIT 许可证。详见 [LICENSE](LICENSE) 文件。
+本项目采用 MIT 许可证。详见 [LICENSE](LICENSE) 文件。 -->
 
 ## 👥 开发团队
 
@@ -145,3 +145,11 @@ git tag v1.0.1
 - 定期从 GitHub 拉取更新: `git fetch --all`
 - 查看可用标签: `git tag -l`
 
+
+## 待开发
+- [] 弹道闭环
+- [] pnp重映射（降低自由度）
+- [] 以球面坐标系（yaw, pitch, distance）优化扩展卡尔曼滤波器
+
+## 开发日志
+- 2025-？？-？？：？？

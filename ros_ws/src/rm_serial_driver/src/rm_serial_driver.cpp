@@ -15,6 +15,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -133,6 +134,25 @@ void RMSerialDriver::receiveData()
         serial_driver_->port()->receive(data);
 
         data.insert(data.begin(), header[0]);
+
+        // 调试：打印原始字节流，便于定位解包问题
+        // if (RCLCPP_LOG_MIN_SEVERITY(get_logger().get_name()) <= RCLCPP_LOG_SEVERITY_DEBUG) {
+        //   std::ostringstream oss;
+        //   oss << "RX raw (" << data.size() << "): ";
+        //   for (auto b : data) {
+        //     oss << std::uppercase << std::hex << std::setw(2) << std::setfill('0')
+        //         << static_cast<int>(b) << ' ';
+        //   }
+        //   RCLCPP_DEBUG(get_logger(), "%s", oss.str().c_str());
+        // }
+        std::ostringstream oss;
+        oss << "RX raw (" << data.size() << "): ";
+        for (auto b : data) {
+          oss << std::uppercase << std::hex << std::setw(2) << std::setfill('0')
+              << static_cast<int>(b) << ' ';
+        }
+        RCLCPP_INFO(get_logger(), "%s", oss.str().c_str());  // 将 DEBUG 改为 INFO
+
         ReceivePacket packet = fromVector(data);
 
         bool crc_ok =
@@ -217,7 +237,8 @@ void RMSerialDriver::receiveData()
           //   marker_pub_->publish(aiming_point_);
           // }
         } else {
-          RCLCPP_ERROR(get_logger(), "CRC error!");
+          // RCLCPP_ERROR(get_logger(), "CRC error!");
+          RCLCPP_ERROR(get_logger(), "CRC error! Data: %s", oss.str().c_str());
         }
       } else {
         RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 20, "Invalid header: %02X", header[0]);
