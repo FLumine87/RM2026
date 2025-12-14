@@ -135,25 +135,16 @@ void RMSerialDriver::receiveData()
 
         data.insert(data.begin(), header[0]);
 
-        // 调试：打印原始字节流，便于定位解包问题
-        // if (RCLCPP_LOG_MIN_SEVERITY(get_logger().get_name()) <= RCLCPP_LOG_SEVERITY_DEBUG) {
-        //   std::ostringstream oss;
-        //   oss << "RX raw (" << data.size() << "): ";
-        //   for (auto b : data) {
-        //     oss << std::uppercase << std::hex << std::setw(2) << std::setfill('0')
-        //         << static_cast<int>(b) << ' ';
-        //   }
-        //   RCLCPP_DEBUG(get_logger(), "%s", oss.str().c_str());
+        // 调试：打印原始字节流，便于定位解包问题（手动开启）
+        // std::ostringstream oss;
+        // oss << "RX raw (" << data.size() << "): ";
+        // for (auto b : data) {
+        //   oss << std::uppercase << std::hex << std::setw(2) << std::setfill('0')
+        //       << static_cast<int>(b) << ' ';
         // }
-        std::ostringstream oss;
-        oss << "RX raw (" << data.size() << "): ";
-        for (auto b : data) {
-          oss << std::uppercase << std::hex << std::setw(2) << std::setfill('0')
-              << static_cast<int>(b) << ' ';
-        }
-        RCLCPP_INFO(get_logger(), "%s", oss.str().c_str());  // 将 DEBUG 改为 INFO
+        // RCLCPP_INFO(get_logger(), "%s", oss.str().c_str());  // 将 DEBUG 改为 INFO
 
-        ReceivePacket packet = fromVector(data);
+        // ReceivePacket packet = fromVector(data);
 
         bool crc_ok =
           crc16::Verify_CRC16_Check_Sum(reinterpret_cast<const uint8_t *>(&packet), sizeof(packet));
