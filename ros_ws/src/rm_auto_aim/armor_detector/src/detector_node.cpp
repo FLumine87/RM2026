@@ -155,6 +155,7 @@ void ArmorDetectorNode::imageCallback(const sensor_msgs::msg::Image::ConstShared
     armors_msg_.header = img_msg->header;
     armors_msg_.header.frame_id = target_frame_;
     marker_array_.markers.clear();
+    armors_msg_.armors.clear();
     armor_marker_.id = 0;
     text_marker_.id = 0;
     armor_marker_.header = armors_msg_.header;
@@ -421,6 +422,16 @@ void ArmorDetectorNode::publishMarkers()
   using Marker = visualization_msgs::msg::Marker;
   armor_marker_.action = armors_msg_.armors.empty() ? Marker::DELETE : Marker::ADD;
   marker_array_.markers.emplace_back(armor_marker_);
+  // if (marker_array_.markers.empty()) {
+  //   // 本帧无标记，发布一次全清除，避免第一帧残留
+  //   visualization_msgs::msg::Marker del;
+  //   del.header = armors_msg_.header;
+  //   del.action = Marker::DELETEALL;
+  //   visualization_msgs::msg::MarkerArray arr;
+  //   arr.markers.emplace_back(del);
+  //   marker_pub_->publish(arr);
+  //   return;
+  // }
   marker_pub_->publish(marker_array_);
 }
 

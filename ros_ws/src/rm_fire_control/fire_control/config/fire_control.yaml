@@ -22,7 +22,7 @@
     communite_delay: 0.0
     receive_to_fire_delay: 0.02
 
-    current_v: 23.0
+    current_v: 10.0
 
 
 

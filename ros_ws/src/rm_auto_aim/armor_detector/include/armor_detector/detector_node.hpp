@@ -89,6 +89,9 @@ private:
   std::shared_ptr<tf2_ros::Buffer> tf2_buffer_;       // TF2缓冲区
   std::shared_ptr<tf2_ros::TransformListener> tf2_listener_;  // TF2监听器
 
+  // 目标坐标系
+  std::string target_frame_;
+
   // 添加相机参数成员变量
   cv::Mat camera_matrix_;
   cv::Mat dist_coeffs_;

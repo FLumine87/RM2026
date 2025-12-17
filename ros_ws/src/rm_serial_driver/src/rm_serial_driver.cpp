@@ -144,7 +144,7 @@ void RMSerialDriver::receiveData()
         // }
         // RCLCPP_INFO(get_logger(), "%s", oss.str().c_str());  // 将 DEBUG 改为 INFO
 
-        // ReceivePacket packet = fromVector(data);
+        ReceivePacket packet = fromVector(data);
 
         bool crc_ok =
           crc16::Verify_CRC16_Check_Sum(reinterpret_cast<const uint8_t *>(&packet), sizeof(packet));
@@ -228,11 +228,12 @@ void RMSerialDriver::receiveData()
           //   marker_pub_->publish(aiming_point_);
           // }
         } else {
-          // RCLCPP_ERROR(get_logger(), "CRC error!");
-          RCLCPP_ERROR(get_logger(), "CRC error! Data: %s", oss.str().c_str());
+          RCLCPP_ERROR(get_logger(), "CRC error!");
+          // 调试：打印原始字节流，便于定位解包问题（手动开启）
+          // RCLCPP_ERROR(get_logger(), "CRC error! Data: %s", oss.str().c_str());
         }
       } else {
-        RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 20, "Invalid header: %02X", header[0]);
+        RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 20, "Invalid header: 0x%02X", header[0]);
       }
     } catch (const std::exception & ex) {
       RCLCPP_ERROR_THROTTLE(
@@ -299,6 +300,15 @@ void RMSerialDriver::sendGimbalData(
     SendPacket packet;
     packet.state = msg->tracking ? 1 : 0;
     packet.id = id_unit8_map.at(msg->id);
+    // 测试id映射
+    // auto it = id_unit8_map.find(msg->id);
+    // if (it == id_unit8_map.end()) {
+    //   RCLCPP_WARN(get_logger(), "Unknown id '%s', fallback to 0", msg->id.c_str());
+    //   packet.id = 0;
+    // } else {
+    //   packet.id = it->second;
+    // }
+
     packet.armors_num = msg->armors_num;
     packet.yaw = msg->yaw;
     // packet.yaw = this->declare_parameter<double>("test_gimbal_v", M_PI / 6.0);
@@ -316,6 +326,9 @@ void RMSerialDriver::sendGimbalData(
     std::vector<uint8_t> data = toVector(packet);
 
     serial_driver_->port()->send(data);
+    // // 手动信息INFO
+    // RCLCPP_INFO(get_logger(), "Gimbal data sent: yaw=%.2f, pitch=%.2f, yaw_diff=%.2f, pitch_diff=%.2f, fire_advice=%d",
+    //   packet.yaw, packet.pitch, packet.yaw_diff, packet.pitch_diff, packet.fire_advice);
   } catch (const std::exception & ex) {
     RCLCPP_ERROR(get_logger(), "Error while sending data: %s", ex.what());
     reopenPort();
