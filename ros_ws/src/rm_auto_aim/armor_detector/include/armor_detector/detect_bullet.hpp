@@ -16,25 +16,6 @@ struct Bullet
   Bullet(const cv::Point2f& c, float r) : center(c), radius(r) {}
 };
 
-class DoFrameDifference
-{
-public:
-  DoFrameDifference();
-  // 帧差掩码生成
-  cv::Mat getDiff(const cv::Mat& cur_hsv,
-                  const cv::Mat& last_hsv_reproj,
-                  const cv::Mat& ref_mask,
-                  const cv::Mat& last_bullet_mask);
-                  
-private:
-  // 帧差参数
-  float Weights[3];
-  uint8_t Diff_Step;
-  uint8_t Diff_Threshold;
-  cv::Mat kernel1_;
-  double tme_ = 0;
-};
-
 class DetectBullet
 {
 public:
@@ -96,6 +77,25 @@ private:
 	// 重投影器
   DoReproj do_reproj_;
   bool has_reproj_ = false;
+};
+
+class DoFrameDifference
+{
+public:
+  DoFrameDifference();
+  // 帧差掩码生成
+  cv::Mat getDiff(const cv::Mat& cur_hsv,
+                  const cv::Mat& last_hsv_reproj,
+                  const cv::Mat& ref_mask,
+                  const cv::Mat& last_bullet_mask);
+                  
+private:
+  // 帧差参数
+  float Weights[3];
+  uint8_t Diff_Step;
+  uint8_t Diff_Threshold;
+  cv::Mat kernel1_;
+  double tme_ = 0;
 };
 
 }  // namespace rm_auto_aim
