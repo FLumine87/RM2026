@@ -47,7 +47,6 @@ ArmorDetectorNode::ArmorDetectorNode(const rclcpp::NodeOptions & options)
 
   // 初始化装甲板检测器
   detector_ = initDetector();
-  bullet_detector_ = initBulletDetector();
 
   // 创建装甲板检测结果发布者（使用传感器数据QoS配置）
   armors_pub_ = this->create_publisher<auto_aim_interfaces::msg::Armors>(
@@ -88,6 +87,9 @@ ArmorDetectorNode::ArmorDetectorNode(const rclcpp::NodeOptions & options)
   tf2_buffer_->setCreateTimerInterface(timer_interface);
   // 创建TF2监听器（自动接收坐标变换数据）
   tf2_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf2_buffer_);
+
+  // 目标坐标系（与 tracker 保持一致，默认使用 odom）
+  target_frame_ = this->declare_parameter("target_frame", "odom");
 
   // 初始化调试模式参数
   debug_ = this->declare_parameter("debug", false);
@@ -145,22 +147,19 @@ void ArmorDetectorNode::imageCallback(const sensor_msgs::msg::Image::ConstShared
 {
   // 检测图像中的装甲板（相机坐标系）
   auto camera_frame_armors = detectArmors(img_msg);
-  // 检测图像中的弹丸（相机坐标系）
-  auto bullets = detectBullet(img_msg);
-
-  if (debug_ || bullet_debug_) {
-    drawAllResults(img, armors, bullets);
-    result_img_pub_.publish(cv_bridge::CvImage(img_msg->header, "rgb8", img).toImageMsg());
-  }
 
   // 当PnP解算器就绪且处于瞄准任务模式时处理检测结果
   if (pnp_solver_ != nullptr && is_aim_task_) {
     // 初始化消息头并清空之前的数据
-    armors_msg_.header = armor_marker_.header = text_marker_.header = img_msg->header;
-    armors_msg_.armors.clear();
+    // 统一使用目标坐标系的 header
+    armors_msg_.header = img_msg->header;
+    armors_msg_.header.frame_id = target_frame_;
     marker_array_.markers.clear();
-    armor_marker_.id = 0;  // 重置标记ID
+    armors_msg_.armors.clear();
+    armor_marker_.id = 0;
     text_marker_.id = 0;
+    armor_marker_.header = armors_msg_.header;
+    text_marker_.header = armors_msg_.header;
 
     // 遍历所有检测到的装甲板
     auto_aim_interfaces::msg::Armor armor_msg;
@@ -172,10 +171,11 @@ void ArmorDetectorNode::imageCallback(const sensor_msgs::msg::Image::ConstShared
         armor_msg.type = ARMOR_TYPE_STR[static_cast<int>(armor.type)];
         armor_msg.number = armor.number;
 
-        // rvec to 3x3 rotation matrix
+        // 将旋转向量转换为旋转矩阵
         cv::Mat rotation_matrix;
         cv::Rodrigues(rvec, rotation_matrix);
-        // rotation matrix to quaternion
+        
+        // 将旋转矩阵转换为四元数
         tf2::Matrix3x3 tf2_rotation_matrix(
           rotation_matrix.at<double>(0, 0), rotation_matrix.at<double>(0, 1),
           rotation_matrix.at<double>(0, 2), rotation_matrix.at<double>(1, 0),
@@ -193,14 +193,24 @@ void ArmorDetectorNode::imageCallback(const sensor_msgs::msg::Image::ConstShared
         camera_pose.pose.position.z = tvec.at<double>(2);
         camera_pose.pose.orientation = tf2::toMsg(tf2_q);
 
-        try {
-          // 将位姿从相机坐标系转换到odom坐标系
-          auto odom_pose = tf2_buffer_->transform(camera_pose, "odom");
-          // auto odom_pose = tf2_buffer_->transform(camera_pose, "odom", tf2::durationFromSec(0.1));
+        // TF 坐标转换前先检查变换是否可用
+        const rclcpp::Duration timeout = rclcpp::Duration::from_seconds(0.05);
+        if (!tf2_buffer_->canTransform(
+              target_frame_, camera_pose.header.frame_id, camera_pose.header.stamp, timeout)) {
+          RCLCPP_WARN(this->get_logger(), "TF不可用: %s -> %s",
+                      camera_pose.header.frame_id.c_str(), target_frame_.c_str());
+          continue;
+        }
 
-          // 提取原始姿态的欧拉角
-          double original_roll, original_pitch, original_yaw;
-          tf2::Matrix3x3(tf2_q).getRPY(original_roll, original_pitch, original_yaw);
+        try {
+          // 将位姿从相机坐标系转换到目标坐标系（参考 tracker 写法）
+          auto odom_pose = tf2_buffer_->transform(camera_pose, target_frame_);
+
+          // 从转换后的姿态提取欧拉角（世界坐标系下）
+          tf2::Quaternion q_odom;
+          tf2::fromMsg(odom_pose.pose.orientation, q_odom);
+          double roll_w, pitch_w, yaw_w;
+          tf2::Matrix3x3(q_odom).getRPY(roll_w, pitch_w, yaw_w);
 
           // 创建YawPnP对象
           // YawPnP* yaw_pnp = new YawPnP();
@@ -217,27 +227,28 @@ void ArmorDetectorNode::imageCallback(const sensor_msgs::msg::Image::ConstShared
               armor.right_light.bottom
           };
 
-          // 设置yaw
-          yaw_pnp->sys_yaw = original_yaw;
+          // 设置世界坐标系下的yaw
+          yaw_pnp->sys_yaw = yaw_w;
 
           // 设置装甲板四点坐标
-          yaw_pnp->setWorldPoints(object_points,armor.number);
+          yaw_pnp->setWorldPoints(object_points, armor.number);
           yaw_pnp->setImagePoints(image_points);
 
-          // 通过类成员函数调用 getYaw
-          double new_yaw = pnp_solver_->getYaw(yaw_pnp.get(), original_yaw);
+          // 通过类成员函数调用 getYaw（基于世界坐标系）
+          double new_yaw = pnp_solver_->getYaw(*yaw_pnp, yaw_w);
 
-          //这里要判断new_yaw是否有效
-
-          // 生成新的四元数（保持原有roll/pitch）
+          // 生成新的四元数（保持世界坐标系的roll/pitch，仅修改yaw）
           tf2::Quaternion q;
-          q.setRPY(original_roll, original_pitch, new_yaw);  // 仅修改yaw
+          q.setRPY(roll_w, pitch_w, new_yaw);
           q.normalize();
           
           // 更新位姿数据
           armor_msg.pose.position = odom_pose.pose.position;
           armor_msg.pose.orientation = tf2::toMsg(q);
-          
+
+        } catch (const tf2::ExtrapolationException & ex) {
+          RCLCPP_ERROR(get_logger(), "坐标转换外推异常: %s", ex.what());
+          continue;  // 跳过当前装甲板的处理
         } catch (const tf2::TransformException & ex) {
           RCLCPP_ERROR(get_logger(), "坐标转换失败: %s", ex.what());
           continue;  // 跳过当前装甲板的处理
@@ -271,6 +282,7 @@ void ArmorDetectorNode::imageCallback(const sensor_msgs::msg::Image::ConstShared
 
         // 收集数据
         armors_msg_.armors.emplace_back(armor_msg);
+        // 收集标记（在 publishMarkers 中统一追加末尾的控制标记，避免重复添加）
         marker_array_.markers.emplace_back(armor_marker_);
         marker_array_.markers.emplace_back(text_marker_);
       } else {
@@ -368,71 +380,7 @@ std::vector<Armor> ArmorDetectorNode::detectArmors(
         *cv_bridge::CvImage(img_msg->header, "mono8", all_num_img).toImageMsg());
     }
 
-    // detector_->drawResults(img);
-    // // Draw camera center
-    // cv::circle(img, cam_center_, 5, cv::Scalar(255, 0, 0), 2);
-    // // Draw latency
-    // std::stringstream latency_ss;
-    // latency_ss << "Latency: " << std::fixed << std::setprecision(2) << latency << "ms";
-    // auto latency_s = latency_ss.str();
-    // cv::putText(
-    //   img, latency_s, cv::Point(10, 30), cv::FONT_HERSHEY_SIMPLEX, 1.0, cv::Scalar(0, 255, 0), 2);
-    // result_img_pub_.publish(cv_bridge::CvImage(img_msg->header, "rgb8", img).toImageMsg());
-  }
-
-  return armors;
-}
-
-std::unique_ptr<DetectBullet> ArmorDetectorNode::initDetectBullet()
-{
-  // 声明参数并初始化
-  int bullet_binary_thres = declare_parameter("bullet_binary_thres", 180);
-  float bullet_min_area = declare_parameter("bullet_min_area", 10.0f);
-  float bullet_max_area = declare_parameter("bullet_max_area", 500.0f);
-  float bullet_min_ratio = declare_parameter("bullet_min_ratio", 0.7f);
-  float bullet_max_ratio = declare_parameter("bullet_max_ratio", 1.3f);
-  bool bullet_visual_debug = declare_parameter("bullet_visual_debug", false);
-
-  // 创建弹丸检测器对象
-  auto bullet_detector = std::make_unique<DetectBullet>(
-      bullet_binary_thres, bullet_min_area, bullet_max_area, bullet_min_ratio, bullet_max_ratio, bullet_visual_debug);
-  return bullet_detector;
-}
-
-std::vector<Bullet> ArmorDetectorNode::detectBullet(const sensor_msgs::msg::Image::ConstSharedPtr & img_msg)
-{
-  // ROS图像转OpenCV格式
-  auto img = cv_bridge::toCvShare(img_msg, "rgb8")->image;
-
-  // 动态参数更新
-  bullet_detector_->binary_thres = get_parameter("bullet_binary_thres").as_int();
-  bullet_detector_->min_area = get_parameter("bullet_min_area").as_double();
-  bullet_detector_->max_area = get_parameter("bullet_max_area").as_double();
-  bullet_detector_->min_ratio = get_parameter("bullet_min_ratio").as_double();
-  bullet_detector_->max_ratio = get_parameter("bullet_max_ratio").as_double();
-  bullet_detector_->bullet_visual_debug = get_parameter("bullet_visual_debug").as_bool();
-
-  // 弹丸检测
-  auto bullets = bullet_detector_->detect(img);
-
-  // if (bullet_debug_) {
-  //   bullet_detector_->drawResults(img, bullet_debug_);
-  //   result_img_pub_.publish(cv_bridge::CvImage(img_msg->header, "rgb8", img).toImageMsg());
-  // }
-
-  return bullets;
-}
-
-void ArmorDetectorNode::drawAllResults(cv::Mat& img, const std::vector<Armor>& armors, const std::vector<Bullet>& bullets)
-{
-    // 装甲板可视化
     detector_->drawResults(img);
-    // 弹丸可视化
-    bullet_detector_->drawResults(img, bullet_debug_);
-    // 画相机中心
-    cv::circle(img, cam_center_, 5, cv::Scalar(255, 0, 0), 2);
-    // 画延迟等其它信息
-        detector_->drawResults(img);
     // Draw camera center
     cv::circle(img, cam_center_, 5, cv::Scalar(255, 0, 0), 2);
     // Draw latency
@@ -442,7 +390,9 @@ void ArmorDetectorNode::drawAllResults(cv::Mat& img, const std::vector<Armor>& a
     cv::putText(
       img, latency_s, cv::Point(10, 30), cv::FONT_HERSHEY_SIMPLEX, 1.0, cv::Scalar(0, 255, 0), 2);
     result_img_pub_.publish(cv_bridge::CvImage(img_msg->header, "rgb8", img).toImageMsg());
+  }
 
+  return armors;
 }
 
 void ArmorDetectorNode::createDebugPublishers()
@@ -472,6 +422,16 @@ void ArmorDetectorNode::publishMarkers()
   using Marker = visualization_msgs::msg::Marker;
   armor_marker_.action = armors_msg_.armors.empty() ? Marker::DELETE : Marker::ADD;
   marker_array_.markers.emplace_back(armor_marker_);
+  // if (marker_array_.markers.empty()) {
+  //   // 本帧无标记，发布一次全清除，避免第一帧残留
+  //   visualization_msgs::msg::Marker del;
+  //   del.header = armors_msg_.header;
+  //   del.action = Marker::DELETEALL;
+  //   visualization_msgs::msg::MarkerArray arr;
+  //   arr.markers.emplace_back(del);
+  //   marker_pub_->publish(arr);
+  //   return;
+  // }
   marker_pub_->publish(marker_array_);
 }
 

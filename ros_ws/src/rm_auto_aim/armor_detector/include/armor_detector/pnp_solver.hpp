@@ -64,7 +64,7 @@ class PnPSolver
 {
 public:
 
-  double getYaw(YawPnP* yaw_pnp, double yaw);
+  double getYaw(const YawPnP& yaw_pnp, double yaw);
   // 将 armor_points 设为 public 
   std::vector<cv::Point3f> small_armor_points_;
   std::vector<cv::Point3f> large_armor_points_;

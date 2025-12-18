@@ -19,11 +19,11 @@ public:
 
 private:
     Eigen::Matrix4d cam_mat_;
-    Eigen::Matrix3d imu_mat_;
+    Eigen::Matrix3d imu_mat_;//名称需要修改
 
     Eigen::Matrix4d quatToTransMat(const Quat& q) const;
 };
 
 }  // namespace rm_auto_aim
 
-#endif  // ARMOR_DETECTOR__DO_REPROJ_HPP_
+#endif  // BULLET_DETECTOR__DO_REPROJ_HPP_

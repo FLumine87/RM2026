@@ -43,7 +43,7 @@ Solver::Solver(std::weak_ptr<rclcpp::Node> n)
   CommuniDelay_ = node->declare_parameter<double>("communite_delay", 0.0);   //上下位机通信延迟
   ReceiveToFireDelay_ = node->declare_parameter<double>("receive_to_fire_delay", 0.01);  //接收信息到开火延迟
 
-  Cur_V_ = node->declare_parameter<double>("current_v", 22.0);  //  m/s
+  Cur_V_ = node->declare_parameter<double>("current_v", 10.0);  //  m/s
   up_overflow_count_ = 0;
   down_overflow_count_ = 0;
   state_ = State::SLOW;
@@ -322,12 +322,11 @@ double Solver::AngleToGimbalX(const double &yaw, const double &cur_yaw)
 }
 
 void Solver::ChangeOfAngle(const HitInfo &Hit_info,
-                            const double &Cur_yaw_,
-                            const double &Cur_pitch_,
-                            const double &Cur_roll_,
-                            double &gimbal_cmd_yaw_diff,
-                            double &gimbal_cmd_pitch_diff
-                          )
+                           const double &Cur_yaw_,
+                           const double &Cur_pitch_,
+                           const double &Cur_roll_,
+                           double &gimbal_cmd_yaw_diff,
+                           double &gimbal_cmd_pitch_diff)
 {
   gimbal_cmd_yaw_diff = std::atan2(
     std::sin(Hit_info.yaw - Cur_yaw_) * std::cos(Cur_roll_) -

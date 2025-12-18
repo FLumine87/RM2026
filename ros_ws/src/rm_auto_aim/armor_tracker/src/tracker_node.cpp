@@ -206,7 +206,8 @@ ArmorTrackerNode::ArmorTrackerNode(const rclcpp::NodeOptions & options)
 
 void ArmorTrackerNode::armorsCallback(const auto_aim_interfaces::msg::Armors::SharedPtr armors_msg)
 {
-  
+  const size_t before_cnt = armors_msg->armors.size();
+
   // Filter abnormal armors
   armors_msg->armors.erase(
     std::remove_if(
@@ -217,6 +218,14 @@ void ArmorTrackerNode::armorsCallback(const auto_aim_interfaces::msg::Armors::Sh
                  max_armor_distance_;
       }),
     armors_msg->armors.end());
+
+  const size_t after_cnt = armors_msg->armors.size();
+  if (before_cnt != after_cnt) {
+    RCLCPP_DEBUG(this->get_logger(),
+                 "Armors filtered: %zu -> %zu (|z|>1.2 or xy_dist>%.2f). frame_id=%s",
+                 before_cnt, after_cnt, max_armor_distance_,
+                 armors_msg->header.frame_id.c_str());
+  }
 
   // Init message
   auto_aim_interfaces::msg::TrackerInfo info_msg;

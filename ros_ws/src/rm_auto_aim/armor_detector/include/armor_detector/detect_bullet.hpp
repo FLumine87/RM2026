@@ -1,5 +1,5 @@
-#ifndef BULLET_DETECTOR__DETECTOR_HPP_
-#define BULLET_DETECTOR__DETECTOR_HPP_
+#ifndef ARMOR_DETECTOR__DETECT_BULLET_HPP_
+#define ARMOR_DETECTOR__DETECT_BULLET_HPP_
 
 #include <opencv2/core.hpp>
 #include <Eigen/Dense>
@@ -11,62 +11,91 @@ namespace rm_auto_aim
 
 struct Bullet
 {
-    cv::Point2f center;
-    float radius;
-    Bullet(const cv::Point2f& c, float r) : center(c), radius(r) {}
+  cv::Point2f center;
+  float radius;
+  Bullet(const cv::Point2f& c, float r) : center(c), radius(r) {}
+};
+
+class DoFrameDifference
+{
+public:
+  DoFrameDifference();
+  // 帧差掩码生成
+  cv::Mat getDiff(const cv::Mat& cur_hsv,
+                  const cv::Mat& last_hsv_reproj,
+                  const cv::Mat& ref_mask,
+                  const cv::Mat& last_bullet_mask);
+                  
+private:
+  // 帧差参数
+  float Weights[3];
+  uint8_t Diff_Step;
+  uint8_t Diff_Threshold;
+  cv::Mat kernel1_;
+  double tme_ = 0;
 };
 
 class DetectBullet
 {
 public:
-    DetectBullet(int binary_thres, float min_area, float max_area, float min_ratio, float max_ratio, bool bullet_visual_debug);
+  DetectBullet();
 
-    void setReproj(const DoReproj& do_reproj);
+	// 主入口：处理新帧
+  std::vector<Bullet> process_new_frame(const cv::Mat& new_frame, const Eigen::Quaterniond& q);
 
-    // 主流程：帧差法+重投影+颜色亮度判定+上一帧弹丸掩码
-    std::vector<Bullet> detectWithHistory(const cv::Mat& cur_frame, const cv::Mat& last_frame, const Eigen::Quaterniond& cur_q, const Eigen::Quaterniond& last_q);
+  // 直接在内部构造和初始化do_reproj_
+  void initReprojFromMat(const cv::Mat& cam, const cv::Mat& imu);
+  // 兼容：外部传入DoReproj对象
+  // void setReproj(const DoReproj& do_reproj);
 
-    void drawResults(cv::Mat& img);
+	// 获取**候选区域**
+  void get_possible();
+  // 颜色掩码生成（inRange）
+  cv::Mat getColorMask(const cv::Mat& hsv);
+  // 亮度掩码生成
+  cv::Mat getBrightnessMask(const cv::Mat& hsv);
 
-    int binary_thres;
-    float min_area, max_area;
-    float min_ratio, max_ratio;
-    bool bullet_visual_debug;
+  // 获取子弹
+  void get_bullets();
+  // 子弹验证
+  bool test_is_bullet(const std::vector<cv::Point>& contour);
+  // 轮廓点排序
+  void sort_points(std::vector<cv::Point>& vec);
+	// 结果绘制
+	void drawResults(cv::Mat& img);
 
-    // 性能统计
-    double tme_total = 0, tme_diff = 0, tme_contour = 0, tme_bright = 0;
+  // 可调参数
+  int binary_thres;
+  float min_area, max_area;
+  float min_ratio, max_ratio;
+  bool bullet_visual_debug;
+
+  // 算法参数（构造函数中初始化）
+  cv::Size Kernel1_Size;
+  cv::Size Kernel2_Size;
+  cv::Scalar Color_LowB;
+  cv::Scalar Color_UpB;
+  cv::Scalar Min_Value;
+  // 性能统计
+  double tme_total = 0, tme_diff = 0, tme_contour = 0, tme_bright = 0;
+  // 输出结果
+  std::vector<Bullet> bullets;
 
 private:
-    // 颜色掩码生成
-    cv::Mat getColorMask(const cv::Mat& hsv);
-    // 亮度掩码生成
-    cv::Mat getBrightnessMask(const cv::Mat& hsv);
-    // 轮廓查找（带层级统计与嵌套提示，方式可选）
-    std::vector<std::vector<cv::Point>> findBulletContoursWithHierarchy(const cv::Mat& mask, int mode = cv::CHAIN_APPROX_NONE);
-    // 亮度判定更灵活
-    bool testIsBulletColor(const cv::Vec3b& hsv_col);
-    // 轮廓点排序与逐行亮度判定
-    bool contourBrightestCheck(const std::vector<cv::Point>& contour, const cv::Mat& hsv);
-    // 寻找弹丸轮廓
-    std::vector<std::vector<cv::Point>> findBulletContours(const cv::Mat& mask);
-    // 判断轮廓是否为弹丸
-    bool isBulletContour(const std::vector<cv::Point>& contour, const cv::Mat& hsv);
-    // 帧差法+颜色判定，生成弹丸掩码
-    cv::Mat getBulletMask(const cv::Mat& cur_hsv, const cv::Mat& last_hsv_reproj);
-    // 统计弹丸结果
-    std::vector<Bullet> extractBullets(const std::vector<std::vector<cv::Point>>& contours, const cv::Mat& cur_hsv);
+  // 上一帧弹丸掩码
+  cv::Mat last_bullet_mask_;
+  // 上一帧弹丸结果
+  std::vector<Bullet> last_bullets_;
+  // 上一帧原图缓存
+  cv::Mat last_cur_frame_;
+  // 上一帧HSV缓存
+  cv::Mat last_cur_hsv_;
 
-    // 上一帧弹丸掩码
-    cv::Mat last_bullet_mask_;
-    // 上一帧弹丸结果
-    std::vector<Bullet> last_bullets_;
-    // 上一帧原图缓存
-    cv::Mat last_cur_frame_;
-    // 上一帧HSV缓存
-    cv::Mat last_cur_hsv_;
-
-    DoReproj do_reproj_;
-    bool has_reproj_ = false;
+	// 帧差器
+  DoFrameDifference frame_diff_;
+	// 重投影器
+  DoReproj do_reproj_;
+  bool has_reproj_ = false;
 };
 
 }  // namespace rm_auto_aim

@@ -60,16 +60,16 @@ float PnPSolver::calculateDistanceToCenter(const cv::Point2f & image_point)
   return cv::norm(image_point - cv::Point2f(cx, cy));
 }
 
-double rm_auto_aim::PnPSolver:: getYaw(YawPnP* yaw_pnp, double yaw) {
+double rm_auto_aim::PnPSolver:: getYaw(const YawPnP& yaw_pnp, double yaw) {
     // 求解yaw
     // 通过角度代价函数计算偏航角（搜索范围-π/2~π/2，步长0.03弧度）
-    double angle_yaw = yaw_pnp->getYawByAngleCost(-(M_PI / 2), (M_PI / 2), 0.03);
+    double angle_yaw = yaw_pnp.getYawByAngleCost(-(M_PI / 2), (M_PI / 2), 0.03);
     // 通过像素代价函数计算偏航角（相同搜索范围和步长）
-    double pixel_yaw = yaw_pnp->getYawByPixelCost(-(M_PI / 2), (M_PI / 2), 0.03);
+    double pixel_yaw = yaw_pnp.getYawByPixelCost(-(M_PI / 2), (M_PI / 2), 0.03);
     // 混合两种方法得到最终补偿值
-    double append_yaw = yaw_pnp->getYawByMix(pixel_yaw, angle_yaw);
-    // 释放yaw_pnp对象内存
-    delete yaw_pnp;
+    double append_yaw = yaw_pnp.getYawByMix(pixel_yaw, angle_yaw);
+    // // 释放yaw_pnp对象内存
+    // delete yaw_pnp;
     // 返回补偿后的总偏航角（附加补偿+原始偏航）
     return append_yaw + yaw;
 }
