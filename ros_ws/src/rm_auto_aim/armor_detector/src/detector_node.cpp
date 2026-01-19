@@ -229,13 +229,13 @@ void ArmorDetectorNode::imageCallback(const sensor_msgs::msg::Image::ConstShared
         camera_pose.pose.orientation = tf2::toMsg(tf2_q);
 
         // TF 坐标转换前先检查变换是否可用
-        // const rclcpp::Duration timeout = rclcpp::Duration::from_seconds(0.05);
-        // if (!tf2_buffer_->canTransform(
-        //       target_frame_, camera_pose.header.frame_id, camera_pose.header.stamp, timeout)) {
-        //   RCLCPP_WARN(this->get_logger(), "TF不可用: %s -> %s",
-        //               camera_pose.header.frame_id.c_str(), target_frame_.c_str());
-        //   continue;
-        // }
+        const rclcpp::Duration timeout = rclcpp::Duration::from_seconds(0.05);
+        if (!tf2_buffer_->canTransform(
+              target_frame_, camera_pose.header.frame_id, camera_pose.header.stamp, timeout)) {
+          RCLCPP_WARN(this->get_logger(), "TF不可用: %s -> %s",
+                      camera_pose.header.frame_id.c_str(), target_frame_.c_str());
+          continue;
+        }
 
         try {
           // 将位姿从相机坐标系转换到目标坐标系（参考 tracker 写法）
@@ -495,18 +495,18 @@ void ArmorDetectorNode::destroyDebugPublishers()
 
 void ArmorDetectorNode::publishMarkers()
 {
-  // using Marker = visualization_msgs::msg::Marker;
-  // armor_marker_.action = armors_msg_.armors.empty() ? Marker::DELETE : Marker::ADD;
+  using Marker = visualization_msgs::msg::Marker;
+  armor_marker_.action = armors_msg_.armors.empty() ? Marker::DELETE : Marker::ADD;
   // marker_array_.markers.emplace_back(armor_marker_);
-  if (marker_array_.markers.empty()) {
-    visualization_msgs::msg::Marker del;
-    del.header = armors_msg_.header;
-    del.action = visualization_msgs::msg::Marker::DELETEALL;
-    visualization_msgs::msg::MarkerArray arr;
-    arr.markers.emplace_back(del);
-    marker_pub_->publish(arr);
-    return;
-  }
+  // if (marker_array_.markers.empty()) {
+  //   visualization_msgs::msg::Marker del;
+  //   del.header = armors_msg_.header;
+  //   del.action = visualization_msgs::msg::Marker::DELETEALL;
+  //   visualization_msgs::msg::MarkerArray arr;
+  //   arr.markers.emplace_back(del);
+  //   marker_pub_->publish(arr);
+  //   return;
+  // }
   marker_pub_->publish(marker_array_);
   // if (marker_array_.markers.empty()) {
   //   // 本帧无标记，发布一次全清除，避免第一帧残留

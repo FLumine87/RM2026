@@ -77,6 +77,11 @@ def generate_launch_description():
         actions=[serial_driver_node],
     )
 
+    delay_cam_detector = TimerAction(
+        period=2.0,  # 延迟2秒
+        actions=[cam_detector],
+    )
+
     delay_armor_tracker_node = TimerAction(
         period=2.0,
         actions=[armor_tracker_node],
@@ -95,9 +100,9 @@ def generate_launch_description():
 
 
     return LaunchDescription([
-        robot_state_publisher,
-        cam_detector,       
+        robot_state_publisher,      
         delay_serial_node,
+        delay_cam_detector,
         delay_armor_tracker_node,
         delay_buff_tracker_node,
         delay_fire_control_node
