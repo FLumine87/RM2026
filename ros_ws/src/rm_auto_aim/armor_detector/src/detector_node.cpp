@@ -48,6 +48,9 @@ ArmorDetectorNode::ArmorDetectorNode(const rclcpp::NodeOptions & options)
   // 初始化装甲板检测器
   detector_ = initDetector();
 
+  // Detect Bullet
+  bullet_detector_ = std::make_unique<DetectBullet>(this);
+
   // 创建装甲板检测结果发布者（使用传感器数据QoS配置）
   armors_pub_ = this->create_publisher<auto_aim_interfaces::msg::Armors>(
     "/detector/armors", rclcpp::SensorDataQoS());
@@ -147,6 +150,14 @@ void ArmorDetectorNode::imageCallback(const sensor_msgs::msg::Image::ConstShared
 {
   // 检测图像中的装甲板（相机坐标系）
   auto camera_frame_armors = detectArmors(img_msg);
+  
+  // Detect Bullets
+  std::vector<Bullet> bullets;
+	bool bullet_visualization = false;
+	this->get_parameter("bullet_visualization", bullet_visualization);
+  if (bullet_visualization){
+    bullets = detectBullets(img_msg);
+  }
 
   // 当PnP解算器就绪且处于瞄准任务模式时处理检测结果
   if (pnp_solver_ != nullptr && is_aim_task_) {
@@ -160,6 +171,30 @@ void ArmorDetectorNode::imageCallback(const sensor_msgs::msg::Image::ConstShared
     text_marker_.id = 0;
     armor_marker_.header = armors_msg_.header;
     text_marker_.header = armors_msg_.header;
+
+    // 遍历所有弹丸，生成 marker
+    for (const auto& bullet : bullets) {
+      visualization_msgs::msg::Marker bullet_marker;
+      bullet_marker.header = img_msg->header;
+      bullet_marker.header.frame_id = target_frame_;
+      bullet_marker.ns = "bullets";
+      bullet_marker.id = marker_array_.markers.size(); // 保证唯一
+      bullet_marker.type = visualization_msgs::msg::Marker::SPHERE;
+      bullet_marker.action = visualization_msgs::msg::Marker::ADD;
+      bullet_marker.pose.position.x = bullet.center.x; // 这里是像素坐标，建议做投影变换
+      bullet_marker.pose.position.y = bullet.center.y;
+      bullet_marker.pose.position.z = 0;
+      bullet_marker.scale.x = bullet.radius * 2;
+      bullet_marker.scale.y = bullet.radius * 2;
+      bullet_marker.scale.z = 0.02;
+      bullet_marker.color.a = 1.0;
+      bullet_marker.color.r = 1.0;
+      bullet_marker.color.g = 1.0;
+      bullet_marker.color.b = 0.0;
+      bullet_marker.lifetime = rclcpp::Duration::from_seconds(0.1);
+
+      marker_array_.markers.emplace_back(bullet_marker);
+    }
 
     // 遍历所有检测到的装甲板
     auto_aim_interfaces::msg::Armor armor_msg;
@@ -194,13 +229,13 @@ void ArmorDetectorNode::imageCallback(const sensor_msgs::msg::Image::ConstShared
         camera_pose.pose.orientation = tf2::toMsg(tf2_q);
 
         // TF 坐标转换前先检查变换是否可用
-        const rclcpp::Duration timeout = rclcpp::Duration::from_seconds(0.05);
-        if (!tf2_buffer_->canTransform(
-              target_frame_, camera_pose.header.frame_id, camera_pose.header.stamp, timeout)) {
-          RCLCPP_WARN(this->get_logger(), "TF不可用: %s -> %s",
-                      camera_pose.header.frame_id.c_str(), target_frame_.c_str());
-          continue;
-        }
+        // const rclcpp::Duration timeout = rclcpp::Duration::from_seconds(0.05);
+        // if (!tf2_buffer_->canTransform(
+        //       target_frame_, camera_pose.header.frame_id, camera_pose.header.stamp, timeout)) {
+        //   RCLCPP_WARN(this->get_logger(), "TF不可用: %s -> %s",
+        //               camera_pose.header.frame_id.c_str(), target_frame_.c_str());
+        //   continue;
+        // }
 
         try {
           // 将位姿从相机坐标系转换到目标坐标系（参考 tracker 写法）
@@ -227,20 +262,30 @@ void ArmorDetectorNode::imageCallback(const sensor_msgs::msg::Image::ConstShared
               armor.right_light.bottom
           };
 
-          // 设置世界坐标系下的yaw
-          yaw_pnp->sys_yaw = yaw_w;
-
-          // 设置装甲板四点坐标
-          yaw_pnp->setWorldPoints(object_points, armor.number);
-          yaw_pnp->setImagePoints(image_points);
-
-          // 通过类成员函数调用 getYaw（基于世界坐标系）
-          double new_yaw = pnp_solver_->getYaw(*yaw_pnp, yaw_w);
-
-          // 生成新的四元数（保持世界坐标系的roll/pitch，仅修改yaw）
+          //其实我不得不说，在一定的original_roll, original_pitch条件下，这个yaw补偿是没有意义的
+          //但我还没有具体的数据
           tf2::Quaternion q;
-          q.setRPY(roll_w, pitch_w, new_yaw);
-          q.normalize();
+					bool pnp_yaw_compensation = true;
+					this->get_parameter("pnp_yaw_compensation", pnp_yaw_compensation);
+          if (pnp_yaw_compensation == false) {
+            q.setRPY(roll_w, pitch_w, yaw_w);  // 不修改yaw
+            q.normalize();
+          }
+          else {
+            // 设置yaw
+            yaw_pnp->sys_yaw = yaw_w;
+
+            // 设置装甲板四点坐标
+            yaw_pnp->setWorldPoints(object_points,armor.number);
+            yaw_pnp->setImagePoints(image_points);
+
+            // 通过类成员函数调用 getYaw
+            double new_yaw = pnp_solver_->getYaw(*yaw_pnp, yaw_w);
+
+            // 生成新的四元数（保持原有roll/pitch）
+            q.setRPY(roll_w, pitch_w, new_yaw);  // 仅修改yaw
+            q.normalize();
+          }
           
           // 更新位姿数据
           armor_msg.pose.position = odom_pose.pose.position;
@@ -273,7 +318,13 @@ void ArmorDetectorNode::imageCallback(const sensor_msgs::msg::Image::ConstShared
         // 准备可视化标记（使用转换后的位姿）
         armor_marker_.id++;
         armor_marker_.scale.y = armor.type == ArmorType::SMALL ? 0.135 : 0.23;
-        armor_marker_.pose = armor_msg.pose;
+        // armor_marker_.pose = armor_msg.pose;
+        armor_marker_.header = img_msg->header; // 保证 frame_id 是相机坐标系
+        // armor_marker_.header.frame_id = img_msg->header.frame_id;
+        armor_marker_.pose.position.x = tvec.at<double>(0);
+        armor_marker_.pose.position.y = tvec.at<double>(1);
+        armor_marker_.pose.position.z = tvec.at<double>(2);
+        armor_marker_.pose.orientation = tf2::toMsg(tf2_q);
         
         text_marker_.id++;
         text_marker_.pose.position = armor_msg.pose.position;
@@ -395,6 +446,31 @@ std::vector<Armor> ArmorDetectorNode::detectArmors(
   return armors;
 }
 
+std::vector<Bullet> ArmorDetectorNode::detectBullets(
+  const sensor_msgs::msg::Image::ConstSharedPtr & img_msg)
+{
+  Eigen::Quaterniond q_cur(1, 0, 0, 0); // 默认单位四元数
+  try {
+    auto tf_msg = tf2_buffer_->lookupTransform(
+        target_frame_, img_msg->header.frame_id, img_msg->header.stamp, rclcpp::Duration::from_seconds(0.05));
+    q_cur = Eigen::Quaterniond(
+        tf_msg.transform.rotation.w,
+        tf_msg.transform.rotation.x,
+        tf_msg.transform.rotation.y,
+        tf_msg.transform.rotation.z
+    );
+  } catch (const tf2::TransformException & ex) {
+    RCLCPP_WARN(this->get_logger(), "TF获取失败: %s", ex.what());
+    // 可以选择跳过弹丸检测或用单位四元数
+    q_cur = Eigen::Quaterniond (1, 0, 0, 0);
+  }
+
+	auto img = cv_bridge::toCvShare(img_msg, "bgr8")->image;
+	auto bullets = bullet_detector_->processNewFrame(img, q_cur);
+  return bullets;
+
+}
+
 void ArmorDetectorNode::createDebugPublishers()
 {
   lights_data_pub_ =
@@ -419,9 +495,19 @@ void ArmorDetectorNode::destroyDebugPublishers()
 
 void ArmorDetectorNode::publishMarkers()
 {
-  using Marker = visualization_msgs::msg::Marker;
-  armor_marker_.action = armors_msg_.armors.empty() ? Marker::DELETE : Marker::ADD;
-  marker_array_.markers.emplace_back(armor_marker_);
+  // using Marker = visualization_msgs::msg::Marker;
+  // armor_marker_.action = armors_msg_.armors.empty() ? Marker::DELETE : Marker::ADD;
+  // marker_array_.markers.emplace_back(armor_marker_);
+  if (marker_array_.markers.empty()) {
+    visualization_msgs::msg::Marker del;
+    del.header = armors_msg_.header;
+    del.action = visualization_msgs::msg::Marker::DELETEALL;
+    visualization_msgs::msg::MarkerArray arr;
+    arr.markers.emplace_back(del);
+    marker_pub_->publish(arr);
+    return;
+  }
+  marker_pub_->publish(marker_array_);
   // if (marker_array_.markers.empty()) {
   //   // 本帧无标记，发布一次全清除，避免第一帧残留
   //   visualization_msgs::msg::Marker del;
@@ -432,7 +518,7 @@ void ArmorDetectorNode::publishMarkers()
   //   marker_pub_->publish(arr);
   //   return;
   // }
-  marker_pub_->publish(marker_array_);
+
 }
 
 }  // namespace rm_auto_aim

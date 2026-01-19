@@ -24,6 +24,7 @@
 
 #include "armor_detector/detector.hpp"
 #include "armor_detector/number_classifier.hpp"
+#include "armor_detector/detect_bullet.hpp"
 #include "armor_detector/pnp_solver.hpp"
 #include "auto_aim_interfaces/msg/armors.hpp"
 
@@ -44,6 +45,8 @@ private:
   std::unique_ptr<Detector> initDetector();
   std::vector<Armor> detectArmors(const sensor_msgs::msg::Image::ConstSharedPtr & img_msg);
 
+  std::vector<Bullet> detectBullets(const sensor_msgs::msg::Image::ConstSharedPtr & img_msg);
+
   void createDebugPublishers();
   void destroyDebugPublishers();
 
@@ -56,6 +59,9 @@ private:
 
   // Armor Detector
   std::unique_ptr<Detector> detector_;
+    
+  // Bullet Detector
+  std::unique_ptr<DetectBullet> bullet_detector_;
 
   // Detected armors publisher
   auto_aim_interfaces::msg::Armors armors_msg_;
