@@ -314,7 +314,13 @@ void ArmorDetectorNode::imageCallback(const sensor_msgs::msg::Image::ConstShared
         // 准备可视化标记（使用转换后的位姿）
         armor_marker_.id++;
         armor_marker_.scale.y = armor.type == ArmorType::SMALL ? 0.135 : 0.23;
-        armor_marker_.pose = armor_msg.pose;
+        // armor_marker_.pose = armor_msg.pose;
+        armor_marker_.header = img_msg->header; // 保证 frame_id 是相机坐标系
+        // armor_marker_.header.frame_id = img_msg->header.frame_id;
+        armor_marker_.pose.position.x = tvec.at<double>(0);
+        armor_marker_.pose.position.y = tvec.at<double>(1);
+        armor_marker_.pose.position.z = tvec.at<double>(2);
+        armor_marker_.pose.orientation = tf2::toMsg(tf2_q);
         
         text_marker_.id++;
         text_marker_.pose.position = armor_msg.pose.position;
