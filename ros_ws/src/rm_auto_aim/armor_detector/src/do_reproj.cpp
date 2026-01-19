@@ -5,20 +5,20 @@
 namespace rm_auto_aim
 {
 
-DoReproj::DoReproj(const cv::Mat& cam, const cv::Mat& imu)
+DoReproj::DoReproj(const cv::Mat& cam, const cv::Mat& odom)
 {
     cam_mat_ = Eigen::Matrix4d::Zero();
     Eigen::Matrix<double, 3, 4> mat;
     cv::cv2eigen(cam, mat);
     cam_mat_.block<3, 4>(0, 0) = mat;
     cam_mat_(3, 3) = 1;
-    cv::cv2eigen(imu, imu_mat_);
+    cv::cv2eigen(odom, odom_mat_);
 }
 
 Eigen::Matrix4d DoReproj::quatToTransMat(const Quat& q) const
 {
     Eigen::Matrix4d res = Eigen::Matrix4d::Zero();
-    res.block<3, 3>(0, 0) = imu_mat_ * q.matrix().inverse();
+    res.block<3, 3>(0, 0) = odom_mat_ * q.matrix().inverse();
     res(3, 3) = 1;
     return res;
 }

@@ -130,21 +130,20 @@ PnP解算器将 `cv::solvePnP()` 封装，接口中传入 `Armor` 类型的数�
 ```text
 main/调用者
     │
-    └── DetectBullet::process_new_frame()           ← 主入口
-        ├── cv::cvtColor()                          ← BGR转HSV
-        ├── DoReproj::reproj()                      ← 重投影上一帧
-        │
-        ├── DetectBullet::get_possible()            ← 获取候选区域
-        │   ├── cv::inRange() ×2                    ← 颜色过滤
-        │   ├── DoFrameDifference::get_diff()       ← 帧差检测
+    └── DetectBullet::processNewFrame()           ← 主入口
+        ├── cv::cvtColor                          ← BGR转HSV
+        ├── DetectBullet::getPossible()            ← 获取候选区域
+        |   ├── DoReproj::reproject()                      ← 重投影上一帧
+        │   ├── cv::inRange ×2                    ← 颜色过滤
+        │   ├── DoFrameDifference::getDiff()       ← 帧差检测
         │   │   ├── 像素级差分计算
-        │   │   └── cv::dilate()                   ← 形态学膨胀
-        │   ├── cv::morphologyEx()                  ← 开运算
-        │   └── cv::findContours()                  ← 寻找轮廓
+        │   │   └── cv::dilate                   ← 形态学膨胀
+        │   ├── cv::morphologyEx                  ← 开运算
+        │   └── cv::findContours                  ← 寻找轮廓
         │
-        └── DetectBullet::get_bullets()            ← 获取子弹
-            ├── cv::minAreaRect()                  ← 最小外接矩形
-            ├── DetectBullet::test_is_bullet()     ← 子弹验证
-            │   └── DetectBullet::sort_points()    ← 轮廓点排序
+        └── DetectBullet::getBullets()            ← 获取子弹
+            ├── cv::minAreaRect                  ← 最小外接矩形
+            ├── DetectBullet::testIsBullet()     ← 子弹验证
+            │   └── DetectBullet::sortPoints()    ← 轮廓点排序
             └── cv::drawContours()                 ← 标记已识别子弹
 ```

@@ -21,6 +21,9 @@
     detect_color: 0
     binary_thres: 65
     
+    # 功能开关
+    pnp_yaw_compensation: false    # PnP yaw角补偿开关
+    bullet_visualization: false    # 可视化弹丸开关
 
     light.min_ratio: 0.09
     light.max_ratio: 0.5
