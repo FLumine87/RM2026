@@ -153,7 +153,9 @@ void ArmorDetectorNode::imageCallback(const sensor_msgs::msg::Image::ConstShared
   
   // Detect Bullets
   std::vector<Bullet> bullets;
-  if (this->get_parameter("bullet_visualization", false).as_bool() == true){
+	bool bullet_visualization = false;
+	this->get_parameter("bullet_visualization", bullet_visualization);
+  if (bullet_visualization){
     bullets = detectBullets(img_msg);
   }
 
@@ -227,13 +229,13 @@ void ArmorDetectorNode::imageCallback(const sensor_msgs::msg::Image::ConstShared
         camera_pose.pose.orientation = tf2::toMsg(tf2_q);
 
         // TF 坐标转换前先检查变换是否可用
-        const rclcpp::Duration timeout = rclcpp::Duration::from_seconds(0.05);
-        if (!tf2_buffer_->canTransform(
-              target_frame_, camera_pose.header.frame_id, camera_pose.header.stamp, timeout)) {
-          RCLCPP_WARN(this->get_logger(), "TF不可用: %s -> %s",
-                      camera_pose.header.frame_id.c_str(), target_frame_.c_str());
-          continue;
-        }
+        // const rclcpp::Duration timeout = rclcpp::Duration::from_seconds(0.05);
+        // if (!tf2_buffer_->canTransform(
+        //       target_frame_, camera_pose.header.frame_id, camera_pose.header.stamp, timeout)) {
+        //   RCLCPP_WARN(this->get_logger(), "TF不可用: %s -> %s",
+        //               camera_pose.header.frame_id.c_str(), target_frame_.c_str());
+        //   continue;
+        // }
 
         try {
           // 将位姿从相机坐标系转换到目标坐标系（参考 tracker 写法）
@@ -263,23 +265,25 @@ void ArmorDetectorNode::imageCallback(const sensor_msgs::msg::Image::ConstShared
           //其实我不得不说，在一定的original_roll, original_pitch条件下，这个yaw补偿是没有意义的
           //但我还没有具体的数据
           tf2::Quaternion q;
-          if (this->get_parameter("pnp_yaw_compensation", false).as_bool() == false) {
-            q.setRPY(original_roll, original_pitch, original_yaw);  // 仅修改yaw
+					bool pnp_yaw_compensation = true;
+					this->get_parameter("pnp_yaw_compensation", pnp_yaw_compensation);
+          if (pnp_yaw_compensation == false) {
+            q.setRPY(roll_w, pitch_w, yaw_w);  // 不修改yaw
             q.normalize();
           }
           else {
             // 设置yaw
-            yaw_pnp->sys_yaw = original_yaw;
+            yaw_pnp->sys_yaw = yaw_w;
 
             // 设置装甲板四点坐标
             yaw_pnp->setWorldPoints(object_points,armor.number);
             yaw_pnp->setImagePoints(image_points);
 
             // 通过类成员函数调用 getYaw
-            double new_yaw = pnp_solver_->getYaw(yaw_pnp, original_yaw);
+            double new_yaw = pnp_solver_->getYaw(*yaw_pnp, yaw_w);
 
             // 生成新的四元数（保持原有roll/pitch）
-            q.setRPY(original_roll, original_pitch, new_yaw);  // 仅修改yaw
+            q.setRPY(roll_w, pitch_w, new_yaw);  // 仅修改yaw
             q.normalize();
           }
           
@@ -461,7 +465,8 @@ std::vector<Bullet> ArmorDetectorNode::detectBullets(
     q_cur = Eigen::Quaterniond (1, 0, 0, 0);
   }
 
-  auto bullets = bullet_detector_->processNewFrame(img_msg, q_cur);
+	auto img = cv_bridge::toCvShare(img_msg, "bgr8")->image;
+	auto bullets = bullet_detector_->processNewFrame(img, q_cur);
   return bullets;
 
 }

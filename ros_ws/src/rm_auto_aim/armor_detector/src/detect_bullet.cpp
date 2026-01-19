@@ -113,7 +113,8 @@ void DetectBullet::getPossible()
 	color_mask &= diff_mask;
 
 	// 形态学滤波
-	cv::morphologyEx(color_mask, color_mask, cv::MORPH_OPEN, Kernel2_Size);
+	cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, Kernel2_Size);
+	cv::morphologyEx(color_mask, color_mask, cv::MORPH_OPEN, kernel);
 
 	// 轮廓提取
 	std::vector<std::vector<cv::Point>> contours;

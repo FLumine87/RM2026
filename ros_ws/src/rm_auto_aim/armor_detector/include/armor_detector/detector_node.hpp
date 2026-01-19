@@ -45,6 +45,8 @@ private:
   std::unique_ptr<Detector> initDetector();
   std::vector<Armor> detectArmors(const sensor_msgs::msg::Image::ConstSharedPtr & img_msg);
 
+  std::vector<Bullet> detectBullets(const sensor_msgs::msg::Image::ConstSharedPtr & img_msg);
+
   void createDebugPublishers();
   void destroyDebugPublishers();
 
