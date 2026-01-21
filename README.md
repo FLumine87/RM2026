@@ -1,7 +1,7 @@
 
-# RM2026 -VANGUARD
+# RM2025 -VANGUARD
 
-华南师范大学 RoboMaster 2026 赛季代码库
+华南师范大学 RoboMaster 2025 赛季代码库
 
 ## 📁 项目架构
 
@@ -35,7 +35,7 @@ main ─────────────────────────
 ## 📦 项目结构
 
 ```
-RM2026/
+RM2025/
 ├── ros_ws/                 # ROS 工作空间
 │   ├── src/
 │   │   ├── rm_auto_aim/    # 自动瞄准模块
@@ -134,7 +134,7 @@ git tag v1.0.1
 ## 👥 开发团队
 
 - **团队名称**: vanguard 
-- **竞赛**: RoboMaster 2026
+- **竞赛**: RoboMaster 2025
 - **维护者**: oyyy , gh , pyy 
 
 ---
