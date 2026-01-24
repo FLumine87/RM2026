@@ -114,6 +114,7 @@ int main(int argc, char * argv[])
     solver.set_R_gimbal2world(q);
     auto armors = yolo.detect(img);
     auto targets = tracker.track(armors, t);
+    // 应该在这个位置更新加弹丸识别
     if (!targets.empty())
       target_queue.push(targets.front());
     else
