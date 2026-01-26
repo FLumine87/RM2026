@@ -28,11 +28,23 @@ Solver::Solver(const std::string & config_path) : R_gimbal2world_(Eigen::Matrix3
   auto yaml = YAML::LoadFile(config_path);
 
   auto R_gimbal2imubody_data = yaml["R_gimbal2imubody"].as<std::vector<double>>();
-  auto R_camera2gimbal_data = yaml["R_camera2gimbal"].as<std::vector<double>>();
-  auto t_camera2gimbal_data = yaml["t_camera2gimbal"].as<std::vector<double>>();
   R_gimbal2imubody_ = Eigen::Matrix<double, 3, 3, Eigen::RowMajor>(R_gimbal2imubody_data.data());
-  R_camera2gimbal_ = Eigen::Matrix<double, 3, 3, Eigen::RowMajor>(R_camera2gimbal_data.data());
-  t_camera2gimbal_ = Eigen::Matrix<double, 3, 1>(t_camera2gimbal_data.data());
+
+  auto camera2gimbal = yaml["camera2gimbal"];
+  auto xyz_data = camera2gimbal["xyz"].as<std::vector<double>>();
+  auto ypr_data = camera2gimbal["ypr"].as<std::vector<double>>();
+
+  t_camera2gimbal_ = Eigen::Matrix<double, 3, 1>(xyz_data.data());
+
+  double yaw = ypr_data[0] * CV_PI / 180.0;
+  double pitch = ypr_data[1] * CV_PI / 180.0;
+  double roll = ypr_data[2] * CV_PI / 180.0;
+
+  Eigen::AngleAxisd roll_angle(roll, Eigen::Vector3d::UnitX());
+  Eigen::AngleAxisd pitch_angle(pitch, Eigen::Vector3d::UnitY());
+  Eigen::AngleAxisd yaw_angle(yaw, Eigen::Vector3d::UnitZ());
+
+  R_camera2gimbal_ = yaw_angle * pitch_angle * roll_angle;
 
   auto camera_matrix_data = yaml["camera_matrix"].as<std::vector<double>>();
   auto distort_coeffs_data = yaml["distort_coeffs"].as<std::vector<double>>();

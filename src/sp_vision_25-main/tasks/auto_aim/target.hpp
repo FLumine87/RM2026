@@ -39,7 +39,7 @@ public:
 
   bool diverged() const;
 
-  bool convergened();
+  bool convergened() const;
 
   bool isinit = false;
 
@@ -50,7 +50,8 @@ private:
   int switch_count_;
   int update_count_;
 
-  bool is_switch_, is_converged_;
+  bool is_switch_;
+  mutable bool is_converged_;
 
   tools::ExtendedKalmanFilter ekf_;
   std::chrono::steady_clock::time_point t_;

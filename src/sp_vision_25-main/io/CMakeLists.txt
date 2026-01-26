@@ -15,6 +15,9 @@ add_library(io STATIC
     gimbal/gimbal.cpp
 )
 
+# Add serial include directory using absolute path
+target_include_directories(io PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/serial/include)
+
 # hikrobot
 target_include_directories(io PUBLIC hikrobot/include)
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64")
@@ -46,7 +49,7 @@ find_package(sp_msgs QUIET)
 
 # 如果找不到 ROS 环境，则跳过 ROS 相关的部分
 if(NOT ament_cmake_FOUND OR NOT rclcpp_FOUND OR NOT std_msgs_FOUND OR NOT rosidl_typesupport_cpp_FOUND OR NOT sp_msgs_FOUND)
-    message(WARNING "ROS2 not found, skipping ROS2 specific code.")
+    message(WARNING "ROS2 environment not complete, skipping ROS2 specific code.")
 else()
     message(STATUS "ROS2 environment found, compiling ROS2-related code.")
     

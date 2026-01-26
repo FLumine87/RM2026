@@ -18,7 +18,7 @@ find_package(OpenVINO REQUIRED)
 include_directories(${EIGEN3_INCLUDE_DIR})
 include_directories(${OpenCV_INCLUDE_DIRS})
 include_directories(${PROJECT_SOURCE_DIR})
-
+include_directories(${PROJECT_SOURCE_DIR}/io/serial/include)
 
 add_subdirectory(tools)
 add_subdirectory(io)
@@ -46,6 +46,25 @@ target_link_libraries(auto_buff_debug ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_buff
 target_link_libraries(auto_buff_debug_mpc ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_buff tools io ${CERES_LIBRARIES})
 target_link_libraries(uav ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim auto_buff tools io)
 target_link_libraries(uav_debug ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim tools io)
+
+find_package(ament_cmake QUIET)
+find_package(rclcpp QUIET)
+find_package(std_msgs QUIET)
+find_package(geometry_msgs QUIET)
+find_package(sensor_msgs QUIET)
+find_package(cv_bridge QUIET)
+find_package(tf2_geometry_msgs QUIET)
+find_package(auto_aim_debug_interfaces QUIET)
+
+if(ament_cmake_FOUND AND rclcpp_FOUND AND std_msgs_FOUND AND geometry_msgs_FOUND AND sensor_msgs_FOUND AND cv_bridge_FOUND AND tf2_geometry_msgs_FOUND AND auto_aim_debug_interfaces_FOUND)
+    message(STATUS "Building auto_aim_debug_mpc_ros2 with ROS2 support")
+    add_executable(auto_aim_debug_mpc_ros2 src/auto_aim_debug_mpc_ros2.cpp)
+    ament_target_dependencies(auto_aim_debug_mpc_ros2 rclcpp std_msgs geometry_msgs sensor_msgs cv_bridge tf2_geometry_msgs auto_aim_debug_interfaces)
+    target_link_libraries(auto_aim_debug_mpc_ros2 ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim auto_buff tools io)
+    target_include_directories(auto_aim_debug_mpc_ros2 PRIVATE ${rclcpp_INCLUDE_DIRS} ${std_msgs_INCLUDE_DIRS} ${geometry_msgs_INCLUDE_DIRS} ${sensor_msgs_INCLUDE_DIRS} ${cv_bridge_INCLUDE_DIRS} ${tf2_geometry_msgs_INCLUDE_DIRS})
+else()
+    message(STATUS "ROS2 environment not found, skipping auto_aim_debug_mpc_ros2.")
+endif()
 
 ##################calibration################
 add_executable(capture calibration/capture.cpp)
@@ -83,7 +102,7 @@ target_link_libraries(camera_detect_test ${OpenCV_LIBS} fmt::fmt yaml-cpp tools 
 target_link_libraries(camera_test ${OpenCV_LIBS} fmt::fmt tools io)
 target_link_libraries(camera_thread_test ${OpenCV_LIBS} fmt::fmt auto_aim tools io)
 target_link_libraries(cboard_test ${OpenCV_LIBS} fmt::fmt tools io)
-target_link_libraries(fire_test ${OpenCV_LIBS} fmt::fmt tools io)
+target_link_libraries(fire_test ${OpenCV_LIBS} fmt::fmt tools io auto_aim)
 target_link_libraries(detector_video_test ${OpenCV_LIBS} fmt::fmt yaml-cpp tools auto_aim)
 target_link_libraries(gimbal_response_test ${OpenCV_LIBS} fmt::fmt yaml-cpp tools io)
 target_link_libraries(multi_usbcamera_test ${OpenCV_LIBS} fmt::fmt tools io)
