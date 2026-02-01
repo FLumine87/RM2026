@@ -9,19 +9,58 @@
 #include "do_reproj.hpp"
 
 namespace aimer::aim {
-const float WEIGHTS[3] = { 4, 4, 2 };
-const uint8_t DIFF_STEP = 5;
-const uint8_t DIFF_THRESHOLD = 30;
-const cv::Size KERNEL1_SIZE = cv::Size(10, 10);
-const cv::Size KERNEL2_SIZE = cv::Size(4, 4);
-const cv::Scalar COLOR_LOWB = cv::Scalar(25, 40, 40);
-const cv::Scalar COLOR_UPB = cv::Scalar(90, 255, 255);
-const cv::Scalar MIN_VUE = cv::Scalar(0, 255 * .1, 255 * .2);
+
+// ========== 帧差检测参数 ==========
+const float WEIGHTS[3] = { 4, 4, 2 };        // HSV帧差权重[H,S,V]
+const uint8_t DIFF_STEP = 5;                 // 帧差采样步长(像素)
+const uint8_t DIFF_THRESHOLD = 30;           // 帧差变化阈值
+
+// ========== 形态学处理参数 ==========
+const cv::Size KERNEL1_SIZE = cv::Size(10, 10);  // 膨胀核大小(连接断裂区域)
+const cv::Size KERNEL2_SIZE = cv::Size(4, 4);    // 开运算核大小(去除噪声)
+
+// ========== 颜色筛选参数 ==========
+const cv::Scalar COLOR_LOWB = cv::Scalar(25, 40, 40);    // 弹丸颜色HSV下界[H,S,V]
+const cv::Scalar COLOR_UPB = cv::Scalar(90, 255, 255);   // 弹丸颜色HSV上界[H,S,V]
+const cv::Scalar MIN_VUE = cv::Scalar(0, 255 * .1, 255 * .2);  // 最小亮度阈值
+
+// ========== 弹丸颜色测试参数 ==========
+const int BULLET_COLOR_MIN_V = 50;                   // 弹丸最小亮度值
+const int BULLET_COLOR_TARGET_H = 50;                // 目标色相值(绿色弹丸)
+const int BULLET_COLOR_H_TOLERANCE_BASE = 10;        // H值基础容差
+const double BULLET_COLOR_H_TOLERANCE_COEFF = 0.5;   // 饱和度/亮度对容差的影响系数
+
+// ========== 轮廓形状筛选参数 ==========
+const int BULLET_MIN_AREA = 30;              // 弹丸最小面积(像素²)
+const double BULLET_MIN_RATIO = 0.5;         // 形状填充比阈值
+const double BULLET_RADIUS_COEFF = 0.5;      // 弹丸半径计算系数
+
+// ========== 算法优化参数 ==========
+const int SORT_QUICK_SORT_THRESHOLD = 10;    // 快速排序阈值
+
+// // 白色弹丸专用参数配置（8mm镜头，20米距离）
+// const float WEIGHTS[3] = { 3, 3, 4 };        // 提高V权重，白色主要看亮度
+// const uint8_t DIFF_STEP = 3;                 // 精细采样
+// const uint8_t DIFF_THRESHOLD = 20;           // 高灵敏度
+// const cv::Size KERNEL1_SIZE = cv::Size(6, 6);    // 小核膨胀
+// const cv::Size KERNEL2_SIZE = cv::Size(2, 2);    // 小核去噪
+// const cv::Scalar COLOR_LOWB = cv::Scalar(0, 0, 180);     // 白色低饱和度
+// const cv::Scalar COLOR_UPB = cv::Scalar(180, 50, 255);   // 白色高亮度
+// const cv::Scalar MIN_VUE = cv::Scalar(0, 255 * .05, 255 * .4);  // 高亮度阈值
+
+// const int BULLET_COLOR_MIN_V = 150;                  // 高亮度要求
+// const int BULLET_COLOR_TARGET_H = 0;                 // 无特定色相
+// const int BULLET_COLOR_H_TOLERANCE_BASE = 180;       // 宽色相容差
+// const double BULLET_COLOR_H_TOLERANCE_COEFF = 0.8;   // 降低饱和度影响
+
+// const int BULLET_MIN_AREA = 10;              // 小面积目标
+// const double BULLET_MIN_RATIO = 0.3;         // 宽松形状要求
+// const double BULLET_RADIUS_COEFF = 0.6;      // 适当增大半径系数
 
 // 测试如果一个轮廓中某个像素满足 test_is_bullet_color，那么这个就是弹丸
 bool test_is_bullet_color(const cv::Vec3b& hsv_col) {
-    return hsv_col[2] > 50
-        && fabs((int)hsv_col[0] - 50) < 10 + .5 * exp((hsv_col[1] + hsv_col[2]) / 100);
+    return hsv_col[2] > BULLET_COLOR_MIN_V
+        && fabs((int)hsv_col[0] - BULLET_COLOR_TARGET_H) < BULLET_COLOR_H_TOLERANCE_BASE + BULLET_COLOR_H_TOLERANCE_COEFF * exp((hsv_col[1] + hsv_col[2]) / 100);
 }
 
 // 做帧差（并与原来的取交）
@@ -144,7 +183,7 @@ void DetectBullet::sort_points(std::vector<cv::Point>& vec) {
     std::vector<cv::Point>().swap(vec);
     for (uint32_t x = mn_x; x <= mx_x; ++x) {
         std::vector<uint32_t>& vc_x = this->sort_pts[x];
-        if (vc_x.size() > 10) {
+        if (vc_x.size() > SORT_QUICK_SORT_THRESHOLD) {
             sort(vc_x.begin(), vc_x.end());
         } else {
             for (uint32_t i = 0; i < vc_x.size(); ++i) {
@@ -196,15 +235,15 @@ void DetectBullet::get_bullets() {
         const std::vector<cv::Point>& contour = this->contours[i];
         cv::RotatedRect rect = cv::minAreaRect(contour);
         cv::Size rect_size = rect.size;
-        if (rect_size.area() < 30)
+        if (rect_size.area() < BULLET_MIN_AREA)
             continue;
         double ratio = cv::contourArea(contour) / rect_size.area();
-        if (ratio < 0.5)
+        if (ratio < BULLET_MIN_RATIO)
             continue;
         if (this->test_is_bullet(contour)) {
             this->bullets.emplace_back(
                 rect.center,
-                std::min(rect_size.height, rect_size.width) * .5);
+                std::min(rect_size.height, rect_size.width) * BULLET_RADIUS_COEFF);
             cv::drawContours(
                 this->lst_msk,
                 contours,

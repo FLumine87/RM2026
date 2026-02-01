@@ -79,12 +79,12 @@ void Solver::solve(Armor & armor) const
   armor.ypd_in_world = tools::xyz2ypd(armor.xyz_in_world);
 
   // 平衡不做yaw优化，因为pitch假设不成立
-  auto is_balance = (armor.type == ArmorType::big) &&
-                    (armor.name == ArmorName::three || armor.name == ArmorName::four ||
-                     armor.name == ArmorName::five);
-  if (is_balance) return;
+  // auto is_balance = (armor.type == ArmorType::big) &&
+  //                   (armor.name == ArmorName::three || armor.name == ArmorName::four ||
+  //                    armor.name == ArmorName::five);
+  // if (is_balance) return;
 
-  optimize_yaw(armor);
+  // optimize_yaw(armor);
   return;
 }
 

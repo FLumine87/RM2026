@@ -7,4 +7,4 @@ screen \
     -m \
     bash -c "./watchdog.sh"
 
-# ./build/auto_aim_debug_mpc_ros2 configs/standard3.yaml 
+# ./build/auto_aim_debug_mpc_rosdebug configs/standard3.yaml 

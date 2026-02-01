@@ -1,0 +1,533 @@
+#include <fmt/core.h>
+
+#include <atomic>
+#include <chrono>
+#include <mutex>
+#include <nlohmann/json.hpp>
+#include <opencv2/opencv.hpp>
+#include <thread>
+
+#include "geometry_msgs/msg/pose.hpp"
+#include "geometry_msgs/msg/point.hpp"
+#include "geometry_msgs/msg/vector3.hpp"
+#include "geometry_msgs/msg/transform.hpp"
+#include "io/camera.hpp"
+#include "io/gimbal/gimbal.hpp"
+#include "rclcpp/rclcpp.hpp"
+#include "sensor_msgs/msg/image.hpp"
+#include "std_msgs/msg/header.hpp"
+#include "std_msgs/msg/string.hpp"
+#include "tasks/auto_aim/planner/planner.hpp"
+#include "tasks/auto_aim/solver.hpp"
+#include "tasks/auto_aim/tracker.hpp"
+#include "tasks/auto_aim/yolo.hpp"
+#include "tf2_msgs/msg/tf_message.hpp"
+#include "tools/exiter.hpp"
+#include "tools/img_tools.hpp"
+#include "tools/logger.hpp"
+#include "tools/math_tools.hpp"
+#include "tools/plotter.hpp"
+#include "tools/thread_safe_queue.hpp"
+#include "visualization_msgs/msg/marker.hpp"
+#include "visualization_msgs/msg/marker_array.hpp"
+
+using namespace std::chrono_literals;
+
+struct ArmorMsg
+{
+  std::string number;
+  std::string type;
+  float distance_to_image_center;
+  geometry_msgs::msg::Pose pose;
+  std::vector<geometry_msgs::msg::Point> kpts;
+};
+
+struct TargetMsg
+{
+  std_msgs::msg::Header header;
+  bool tracking;
+  std::string id;
+  int32_t armors_num;
+  float ypd_yaw;
+  float ypd_pitch;
+  float ypd_distance;
+  double yaw;
+  double v_yaw;
+  geometry_msgs::msg::Point position;
+  geometry_msgs::msg::Vector3 velocity;
+  double radius_1;
+  double radius_2;
+  double dz;
+};
+
+class ROS2Publisher : public rclcpp::Node
+{
+public:
+  ROS2Publisher()
+    : Node("auto_aim_debug_publisher")
+    , tf_publisher_(this->create_publisher<tf2_msgs::msg::TFMessage>("tf", 10))
+    , image_publisher_(this->create_publisher<sensor_msgs::msg::Image>("camera/image_raw", 10))
+    // , armor_publisher_(this->create_publisher<sensor_msgs::msg::Image>("armor/image", 10))
+    // , target_publisher_(this->create_publisher<sensor_msgs::msg::Image>("target/image", 10))
+    , armor_msg_publisher_(this->create_publisher<std_msgs::msg::String>("armor_msg", 10))
+    , target_msg_publisher_(this->create_publisher<std_msgs::msg::String>("target_msg", 10))
+    , marker_pub_(this->create_publisher<visualization_msgs::msg::MarkerArray>("visualization_marker", 10))
+  {
+    position_marker_.ns = "position";
+    position_marker_.type = visualization_msgs::msg::Marker::SPHERE;
+    position_marker_.scale.x = position_marker_.scale.y = position_marker_.scale.z = 0.1;
+    position_marker_.color.a = 1.0;
+    position_marker_.color.g = 1.0;
+
+    linear_v_marker_.type = visualization_msgs::msg::Marker::ARROW;
+    linear_v_marker_.ns = "linear_v";
+    linear_v_marker_.scale.x = 0.03;
+    linear_v_marker_.scale.y = 0.05;
+    linear_v_marker_.scale.z = 0.0;
+    linear_v_marker_.color.a = 1.0;
+    linear_v_marker_.color.r = 1.0;
+    linear_v_marker_.color.g = 1.0;
+
+    angular_v_marker_.type = visualization_msgs::msg::Marker::ARROW;
+    angular_v_marker_.ns = "angular_v";
+    angular_v_marker_.scale.x = 0.03;
+    angular_v_marker_.scale.y = 0.05;
+    angular_v_marker_.scale.z = 0.0;
+    angular_v_marker_.color.a = 1.0;
+    angular_v_marker_.color.b = 1.0;
+    angular_v_marker_.color.g = 1.0;
+
+    armor_marker_.ns = "armors";
+    armor_marker_.type = visualization_msgs::msg::Marker::CUBE;
+    armor_marker_.scale.x = 0.03;
+    armor_marker_.scale.y = 0.135;
+    armor_marker_.scale.z = 0.125;
+    armor_marker_.color.a = 1.0;
+    armor_marker_.color.r = 1.0;
+  }
+
+  void publish_tf(const Eigen::Quaterniond & q, const Eigen::Vector3d & t)
+  {
+    tf2_msgs::msg::TFMessage tf_msg;
+    geometry_msgs::msg::TransformStamped transform;
+
+    transform.header.stamp = this->now();
+    transform.header.frame_id = "world";
+    transform.child_frame_id = "camera";
+
+    transform.transform.translation.x = t.x();
+    transform.transform.translation.y = t.y();
+    transform.transform.translation.z = t.z();
+
+    transform.transform.rotation.x = q.x();
+    transform.transform.rotation.y = q.y();
+    transform.transform.rotation.z = q.z();
+    transform.transform.rotation.w = q.w();
+
+    tf_msg.transforms.push_back(transform);
+    tf_publisher_->publish(tf_msg);
+  }
+
+  void publish_image(const cv::Mat & img, const std::string & topic)
+  {
+    auto msg = std::make_shared<sensor_msgs::msg::Image>();
+    msg->header.stamp = this->now();
+    msg->header.frame_id = "camera";
+    msg->height = img.rows;
+    msg->width = img.cols;
+    msg->encoding = "bgr8";
+    msg->is_bigendian = false;
+    msg->step = img.cols * img.elemSize();
+    msg->data.assign(img.data, img.data + img.total() * img.elemSize());
+
+    if (topic == "camera/image_raw")
+      image_publisher_->publish(*msg);
+    // else if (topic == "armor/image")
+    //   armor_publisher_->publish(*msg);
+    // else if (topic == "target/image")
+    //   target_publisher_->publish(*msg);
+  }
+
+  void publish_armor_msg(const std::vector<ArmorMsg> & armors)
+  {
+    auto msg = std::make_shared<std_msgs::msg::String>();
+    
+    nlohmann::json j = nlohmann::json::array();
+    for (const auto & armor : armors) {
+      nlohmann::json armor_json;
+      armor_json["number"] = armor.number;
+      armor_json["type"] = armor.type;
+      armor_json["distance_to_image_center"] = armor.distance_to_image_center;
+      armor_json["pose"]["position"]["x"] = armor.pose.position.x;
+      armor_json["pose"]["position"]["y"] = armor.pose.position.y;
+      armor_json["pose"]["position"]["z"] = armor.pose.position.z;
+      armor_json["pose"]["orientation"]["x"] = armor.pose.orientation.x;
+      armor_json["pose"]["orientation"]["y"] = armor.pose.orientation.y;
+      armor_json["pose"]["orientation"]["z"] = armor.pose.orientation.z;
+      armor_json["pose"]["orientation"]["w"] = armor.pose.orientation.w;
+      
+      nlohmann::json kpts_json = nlohmann::json::array();
+      for (const auto & kpt : armor.kpts) {
+        nlohmann::json kpt_json;
+        kpt_json["x"] = kpt.x;
+        kpt_json["y"] = kpt.y;
+        kpt_json["z"] = kpt.z;
+        kpts_json.push_back(kpt_json);
+      }
+      armor_json["kpts"] = kpts_json;
+      
+      j.push_back(armor_json);
+    }
+    
+    std::string json_str = j.dump();
+    msg->data = json_str;
+    
+    armor_msg_publisher_->publish(*msg);
+  }
+
+  void publish_target_msg(const TargetMsg & target)
+  {
+    auto msg = std::make_shared<std_msgs::msg::String>();
+    
+    nlohmann::json j;
+    j["tracking"] = target.tracking;
+    j["id"] = target.id;
+    j["armors_num"] = target.armors_num;
+    j["position"]["x"] = target.position.x;
+    j["position"]["y"] = target.position.y;
+    j["position"]["z"] = target.position.z;
+    j["velocity"]["x"] = target.velocity.x;
+    j["velocity"]["y"] = target.velocity.y;
+    j["velocity"]["z"] = target.velocity.z;
+    j["ypd_yaw"] = target.ypd_yaw;
+    j["ypd_pitch"] = target.ypd_pitch;
+    j["ypd_distance"] = target.ypd_distance;
+    j["yaw"] = target.yaw;
+    j["v_yaw"] = target.v_yaw;
+    j["radius_1"] = target.radius_1;
+    j["radius_2"] = target.radius_2;
+    j["dz"] = target.dz;
+    
+    std::string json_str = j.dump();
+    msg->data = json_str;
+    
+    target_msg_publisher_->publish(*msg);
+  }
+
+  void publish_marker(
+    bool tracking, const Eigen::Vector3d & position, const Eigen::Vector3d & velocity, 
+    const Eigen::Vector3d & angular_velocity, const std::vector<Eigen::Vector3d> & armor_positions,
+    const std::vector<double> & armor_yaws)
+  {
+    auto now = this->now();
+    visualization_msgs::msg::MarkerArray marker_array;
+
+    if (tracking) {
+      position_marker_.header.stamp = now;
+      position_marker_.header.frame_id = "world";
+      position_marker_.action = visualization_msgs::msg::Marker::ADD;
+      position_marker_.pose.position.x = position.x();
+      position_marker_.pose.position.y = position.y();
+      position_marker_.pose.position.z = position.z();
+      position_marker_.pose.orientation.w = 1.0;
+
+      linear_v_marker_.header.stamp = now;
+      linear_v_marker_.header.frame_id = "world";
+      linear_v_marker_.action = visualization_msgs::msg::Marker::ADD;
+      linear_v_marker_.points.clear();
+      geometry_msgs::msg::Point start_point, end_point;
+      start_point.x = position.x();
+      start_point.y = position.y();
+      start_point.z = position.z();
+      end_point.x = position.x() + velocity.x();
+      end_point.y = position.y() + velocity.y();
+      end_point.z = position.z() + velocity.z();
+      linear_v_marker_.points.push_back(start_point);
+      linear_v_marker_.points.push_back(end_point);
+
+      angular_v_marker_.header.stamp = now;
+      angular_v_marker_.header.frame_id = "world";
+      angular_v_marker_.action = visualization_msgs::msg::Marker::ADD;
+      angular_v_marker_.points.clear();
+      start_point.x = position.x();
+      start_point.y = position.y();
+      start_point.z = position.z();
+      end_point.x = position.x();
+      end_point.y = position.y();
+      end_point.z = position.z() + angular_velocity.z() / CV_PI;
+      angular_v_marker_.points.push_back(start_point);
+      angular_v_marker_.points.push_back(end_point);
+
+      armor_marker_.header.stamp = now;
+      armor_marker_.header.frame_id = "world";
+      armor_marker_.action = visualization_msgs::msg::Marker::ADD;
+      armor_marker_.scale.y = 0.135;
+      for (size_t i = 0; i < armor_positions.size(); i++) {
+        armor_marker_.id = i;
+        armor_marker_.pose.position.x = armor_positions[i].x();
+        armor_marker_.pose.position.y = armor_positions[i].y();
+        armor_marker_.pose.position.z = armor_positions[i].z();
+        
+        double yaw = armor_yaws[i];
+        armor_marker_.pose.orientation.w = std::cos(yaw / 2.0);
+        armor_marker_.pose.orientation.x = 0.0;
+        armor_marker_.pose.orientation.y = 0.0;
+        armor_marker_.pose.orientation.z = std::sin(yaw / 2.0);
+        marker_array.markers.push_back(armor_marker_);
+      }
+
+      marker_array.markers.push_back(position_marker_);
+      marker_array.markers.push_back(linear_v_marker_);
+      marker_array.markers.push_back(angular_v_marker_);
+    } else {
+      position_marker_.action = visualization_msgs::msg::Marker::DELETEALL;
+      linear_v_marker_.action = visualization_msgs::msg::Marker::DELETEALL;
+      angular_v_marker_.action = visualization_msgs::msg::Marker::DELETEALL;
+      armor_marker_.action = visualization_msgs::msg::Marker::DELETEALL;
+      marker_array.markers.push_back(armor_marker_);
+    }
+
+    marker_pub_->publish(marker_array);
+  }
+
+  rclcpp::Publisher<tf2_msgs::msg::TFMessage>::SharedPtr tf_publisher_;
+  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr image_publisher_;
+  // rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr armor_publisher_;
+  // rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr target_publisher_;
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr armor_msg_publisher_;
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr target_msg_publisher_;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_pub_;
+
+  visualization_msgs::msg::Marker position_marker_;
+  visualization_msgs::msg::Marker linear_v_marker_;
+  visualization_msgs::msg::Marker angular_v_marker_;
+  visualization_msgs::msg::Marker armor_marker_;
+};
+
+using namespace std::chrono_literals;
+
+const std::string keys =
+  "{help h usage ? |                        | 输出命令行参数说明}"
+  "{@config-path   | configs/sentry.yaml | 位置参数，yaml配置文件路径 }";
+
+int main(int argc, char * argv[])
+{
+  tools::Exiter exiter;
+  tools::Plotter plotter;
+
+  cv::CommandLineParser cli(argc, argv, keys);
+  auto config_path = cli.get<std::string>(0);
+  if (cli.has("help") || config_path.empty()) {
+    cli.printMessage();
+    return 0;
+  }
+
+  rclcpp::init(argc, argv);
+  auto ros2_publisher = std::make_shared<ROS2Publisher>();
+
+  io::Gimbal gimbal(config_path);
+  io::Camera camera(config_path);
+
+  auto_aim::YOLO yolo(config_path, false);
+  auto_aim::Solver solver(config_path);
+  auto_aim::Tracker tracker(config_path, solver);
+  auto_aim::Planner planner(config_path);
+
+  std::mutex plan_mutex;
+  auto_aim::Plan latest_plan = {};
+
+  tools::ThreadSafeQueue<std::optional<auto_aim::Target>, true> target_queue(1);
+  target_queue.push(std::nullopt);
+
+  std::atomic<bool> quit = false;
+  std::thread ros2_spin_thread([&]() { rclcpp::spin(ros2_publisher); });
+  
+  auto plan_thread = std::thread([&]() {
+    auto t0 = std::chrono::steady_clock::now();
+    uint16_t last_bullet_count = 0;
+
+    while (!quit) {
+      auto target = target_queue.front();
+      auto gs = gimbal.state();
+      auto plan = planner.plan(target, gs.bullet_speed);
+
+      {
+        std::lock_guard<std::mutex> lock(plan_mutex);
+        latest_plan = plan;
+      }
+
+      gimbal.send(
+        plan.control, plan.fire, plan.yaw, plan.yaw_vel, plan.yaw_acc, plan.pitch, plan.pitch_vel,
+        plan.pitch_acc);
+
+      auto fired = gs.bullet_count > last_bullet_count;
+      last_bullet_count = gs.bullet_count;
+
+      nlohmann::json data;
+      data["t"] = tools::delta_time(std::chrono::steady_clock::now(), t0);
+
+      data["gimbal_yaw"] = gs.yaw;
+      data["gimbal_yaw_vel"] = gs.yaw_vel;
+      data["gimbal_pitch"] = gs.pitch;
+      data["gimbal_pitch_vel"] = gs.pitch_vel;
+
+      data["target_yaw"] = plan.target_yaw;
+      data["target_pitch"] = plan.target_pitch;
+
+      data["plan_yaw"] = plan.yaw;
+      data["plan_yaw_vel"] = plan.yaw_vel;
+      data["plan_yaw_acc"] = plan.yaw_acc;
+
+      data["plan_pitch"] = plan.pitch;
+      data["plan_pitch_vel"] = plan.pitch_vel;
+      data["plan_pitch_acc"] = plan.pitch_acc;
+
+      data["fire"] = plan.fire ? 1 : 0;
+      data["fired"] = fired ? 1 : 0;
+
+      if (target.has_value()) {
+        data["target_z"] = target->ekf_x()[4];
+        data["target_vz"] = target->ekf_x()[5];
+      }
+
+      if (target.has_value()) {
+        data["w"] = target->ekf_x()[7];
+      } else {
+        data["w"] = 0.0;
+      }
+
+      plotter.plot(data);
+
+      std::this_thread::sleep_for(10ms);
+    }
+  });
+
+  cv::Mat img;
+  std::chrono::steady_clock::time_point t;
+  std::chrono::steady_clock::time_point t0 = std::chrono::steady_clock::now();
+
+  while (!exiter.exit()) {
+    camera.read(img, t);
+    auto q = gimbal.q(t);
+
+    solver.set_R_gimbal2world(q);
+    
+    Eigen::Vector3d t_camera2world = solver.R_gimbal2world().transpose() * Eigen::Vector3d(0.145, 0, 0.07);
+    ros2_publisher->publish_tf(q, t_camera2world);
+    
+    auto armors = yolo.detect(img);
+    auto targets = tracker.track(armors, t);
+    if (!targets.empty())
+      target_queue.push(targets.front());
+    else
+      target_queue.push(std::nullopt);
+
+    if (!targets.empty()) {
+      auto target = targets.front();
+
+      std::vector<Eigen::Vector4d> armor_xyza_list = target.armor_xyza_list();
+      for (const Eigen::Vector4d & xyza : armor_xyza_list) {
+        auto image_points =
+          solver.reproject_armor(xyza.head(3), xyza[3], target.armor_type, target.name);
+        tools::draw_points(img, image_points, {0, 255, 0});
+      }
+
+      Eigen::Vector4d aim_xyza = planner.debug_xyza;
+      auto image_points =
+        solver.reproject_armor(aim_xyza.head(3), aim_xyza[3], target.armor_type, target.name);
+      tools::draw_points(img, image_points, {0, 0, 255});
+
+      std::vector<ArmorMsg> armor_msgs;
+      for (const auto & armor : armors) {
+        ArmorMsg armor_msg;
+        armor_msg.number = std::to_string(static_cast<int>(armor.name));
+        armor_msg.type = (armor.type == auto_aim::ArmorType::big) ? "big" : "small";
+        armor_msg.distance_to_image_center = static_cast<float>(cv::norm(armor.center - cv::Point2f(img.cols / 2.0f, img.rows / 2.0f)));
+        
+        armor_msg.pose.position.x = armor.xyz_in_world.x();
+        armor_msg.pose.position.y = armor.xyz_in_world.y();
+        armor_msg.pose.position.z = armor.xyz_in_world.z();
+        
+        armor_msg.pose.orientation.w = 1.0;
+        armor_msg.pose.orientation.x = 0.0;
+        armor_msg.pose.orientation.y = 0.0;
+        armor_msg.pose.orientation.z = 0.0;
+        
+        for (const auto & pt : armor.points) {
+          geometry_msgs::msg::Point kpt;
+          kpt.x = pt.x;
+          kpt.y = pt.y;
+          kpt.z = 0.0;
+          armor_msg.kpts.push_back(kpt);
+        }
+        
+        armor_msgs.push_back(armor_msg);
+      }
+      ros2_publisher->publish_armor_msg(armor_msgs);
+
+      TargetMsg target_msg;
+      target_msg.header.stamp = ros2_publisher->now();
+      target_msg.tracking = true;
+      target_msg.id = std::to_string(static_cast<int>(target.name));
+      target_msg.armors_num = static_cast<int32_t>(armor_xyza_list.size());
+      target_msg.position.x = target.ekf_x()[0];
+      target_msg.position.y = target.ekf_x()[2];
+      target_msg.position.z = target.ekf_x()[4];
+      target_msg.velocity.x = target.ekf_x()[1];
+      target_msg.velocity.y = target.ekf_x()[3];
+      target_msg.velocity.z = target.ekf_x()[5];
+      target_msg.yaw = target.ekf_x()[6];
+      target_msg.v_yaw = target.ekf_x()[7];
+      target_msg.radius_1 = 0.0;
+      target_msg.radius_2 = 0.0;
+      target_msg.dz = target.ekf_x()[4];
+      
+      Eigen::Vector3d position(target.ekf_x()[0], target.ekf_x()[2], target.ekf_x()[4]);
+      Eigen::Vector3d ypd = tools::xyz2ypd(position);
+      target_msg.ypd_yaw = static_cast<float>(ypd[0]);
+      target_msg.ypd_pitch = static_cast<float>(ypd[1]);
+      target_msg.ypd_distance = static_cast<float>(ypd[2]);
+      ros2_publisher->publish_target_msg(target_msg);
+
+      Eigen::Vector3d velocity(target.ekf_x()[1], target.ekf_x()[3], target.ekf_x()[5]);
+      Eigen::Vector3d angular_velocity(0, 0, target.ekf_x()[7]);
+      
+      std::vector<Eigen::Vector3d> armor_positions;
+      std::vector<double> armor_yaws;
+      for (const auto & xyza : armor_xyza_list) {
+        armor_positions.push_back(xyza.head(3));
+        armor_yaws.push_back(xyza[3]);
+      }
+      
+      ros2_publisher->publish_marker(true, position, velocity, angular_velocity, armor_positions, armor_yaws);
+    } else {
+      ros2_publisher->publish_marker(false, Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(), {}, {});
+    }
+
+    {
+      std::lock_guard<std::mutex> lock(plan_mutex);
+      auto text = fmt::format(
+        "yaw: {:.2f} pitch: {:.2f} fire: {}", latest_plan.yaw, latest_plan.pitch, latest_plan.fire);
+      cv::putText(img, text, {10, 30}, cv::FONT_HERSHEY_SIMPLEX, 1.0, {0, 255, 0}, 2);
+    }
+
+    auto delay_text = fmt::format(
+      "delay: {:.1f} ms", tools::delta_time(std::chrono::steady_clock::now(), t) * 1000.0);
+    cv::putText(img, delay_text, {10, 60}, cv::FONT_HERSHEY_SIMPLEX, 1.0, {0, 255, 0}, 2);
+
+    ros2_publisher->publish_image(img, "camera/image_raw");
+
+    // cv::resize(img, img, {}, 0.5, 0.5);  // 显示时缩小图片尺寸
+    // cv::imshow("reprojection", img);
+    // auto key = cv::waitKey(1);
+    // if (key == 'q') break;
+  }
+
+  quit = true;
+  if (plan_thread.joinable()) plan_thread.join();
+  if (ros2_spin_thread.joinable()) ros2_spin_thread.join();
+  gimbal.send(false, false, 0, 0, 0, 0, 0, 0);
+  rclcpp::shutdown();
+
+  return 0;
+}

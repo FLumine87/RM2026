@@ -6,3 +6,4 @@ source install/setup.bash
 cmake -B build
 cmake --build build --target auto_aim_debug_mpc_ros2 -j
 make -C build/ -j`nproc`
+make -C build/ -j4

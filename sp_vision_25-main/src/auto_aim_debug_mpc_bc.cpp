@@ -145,6 +145,10 @@ int main(int argc, char * argv[])
 
     auto bullets = bullet_detector.process_new_frame(img, q);
 
+    if (!bullets.empty()) {
+      tools::logger()->info("Detected {} bullets", bullets.size());
+    }
+
     if (!targets.empty()) {
       auto target = targets.front();
 
