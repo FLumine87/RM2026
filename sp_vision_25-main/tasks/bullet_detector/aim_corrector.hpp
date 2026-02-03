@@ -8,11 +8,10 @@
 
 #include <list>
 
-#include "aimer/auto_aim/base/defs.hpp"
-#include "aimer/auto_aim/predictor/aim/detect_bullet.hpp"
-#include "aimer/base/math/filter/filter.hpp"
-#include "aimer/base/math/math.hpp"
-#include "aimer/base/robot/coord_converter.hpp"
+#include "tools/aimer_math.hpp"
+#include "tools/aimer_filter.hpp"
+#include "tools/coord_converter.hpp"
+#include "tasks/bullet_detector/detect_bullet.hpp"
 
 namespace aimer::aim {
 

@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 add_library(bullet_detector OBJECT 
+    aim_corrector.cpp
     detect_bullet.cpp
     do_reproj.cpp
 )

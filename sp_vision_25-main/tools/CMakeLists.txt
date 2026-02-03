@@ -12,4 +12,7 @@ add_library(tools OBJECT
     logger.cpp
     pid.cpp
     crc.cpp
+    coord_converter.cpp
 )
+
+target_link_libraries(tools yaml-cpp)

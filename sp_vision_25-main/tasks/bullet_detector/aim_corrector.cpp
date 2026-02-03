@@ -1,12 +1,9 @@
-#include "aimer/auto_aim/predictor/aim/aim_corrector.hpp"
+#include "tasks/bullet_detector/aim_corrector.hpp"
 
-#include "aimer/auto_aim/predictor/aim/detect_bullet.hpp"
-#include "aimer/auto_aim/predictor/aim/do_reproj.hpp"
-#include "aimer/base/debug/debug.hpp"
-#include "aimer/base/math/math.hpp"
-#include "aimer/base/robot/coord_converter.hpp"
-#include "base/param/parameter.hpp"
-#include "common/common.hpp"
+#include "tasks/bullet_detector/detect_bullet.hpp"
+#include "tasks/bullet_detector/do_reproj.hpp"
+#include "tools/aimer_math.hpp"
+#include "tools/coord_converter.hpp"
 
 namespace aimer::aim {
 
@@ -126,8 +123,8 @@ auto ProjectileSimulator::get_circle_by_t(const double& t) const -> aim::HitCirc
     Eigen::Vector3d xyz_c = this->converter->pi_to_pc(bullet.pos);
     // 沿着正 y 轴与视角的叉积方向得到一个边缘坐标，以计算半径
     Eigen::Vector3d crossed = Eigen::Vector3d(0., 1., 0.).cross(xyz_c).normalized();
-    Eigen::Vector3d edge_xyz_c =
-        xyz_c + crossed * base::get_param<double>("launching-mechanism.bullet.radius");
+    double bullet_radius = 0.015; // 默认子弹半径 15mm
+    Eigen::Vector3d edge_xyz_c = xyz_c + crossed * bullet_radius;
     Eigen::Vector3d edge_xyz_i = this->converter->pc_to_pi(edge_xyz_c);
     cv::Point2f edge_xy_u = this->converter->pi_to_pu(edge_xyz_i);
     cv::Point2f center_xy_u = this->converter->pi_to_pu(bullet.pos);
@@ -140,7 +137,7 @@ auto ProjectileSimulator::get_circle() const -> aim::HitCircle {
 }
 
 auto ProjectileSimulator::get_param_k() const -> double {
-    return base::get_param<double>("launching-mechanism.bullet.resistance-k");
+    return 0.010; // 默认空气阻力系数
 }
 
 auto ProjectileSimulator::catch_circle(const aimer::math::CircleF& circle) const
@@ -303,12 +300,12 @@ auto AimCorrector::get_circles() -> std::vector<aim::IdCircle> {
 }
 
 auto AimCorrector::sample_aim_errors() -> void {
-    aimer::debug::process_timer.print_process_time("before process");
+    // aimer::debug::process_timer.print_process_time("before process");
     this->bullet_detector.process_new_frame(
         this->converter->get_img_ref(),
         this->converter->get_q()
     );
-    aimer::debug::process_timer.print_process_time("after process");
+    // aimer::debug::process_timer.print_process_time("after process");
 
     std::vector<aim::ImageBullet> detected = this->bullet_detector.bullets;
     // std::vector<aimer::math::CircleF> detected =
@@ -320,7 +317,8 @@ auto AimCorrector::sample_aim_errors() -> void {
         // aimer::debug::flask_aim << aimer::debug::FlaskPoint(d.center, {255, 0,
         // 255}, d.r,
         //                                               3);
-        aimer::debug::flask_aim << aimer::debug::FlaskPoint(u.center, { 0, 255, 255 }, u.r, 3);
+        // aimer::debug::flask_aim
+        //     << aimer::debug::FlaskPoint(u.center, { 0, 255, 255 }, u.r, 3);
     }
     for (const auto& bullet: this->bullets) {
         // 寻找合法的目标中代价最小的
@@ -340,8 +338,8 @@ auto AimCorrector::sample_aim_errors() -> void {
         if (best_bullet != undistorted_detected.end()) {
             // 根据大小二分得到校正的预估位置
             aimer::math::CircleF fit = bullet.proj.fit_circle(*best_bullet);
-            aimer::debug::flask_aim
-                << aimer::debug::FlaskPoint(fit.center, { 255, 255, 255 }, fit.r, 3);
+            // aimer::debug::flask_aim
+            //     << aimer::debug::FlaskPoint(fit.center, { 255, 255, 255 }, fit.r, 3);
             // 理想情况（枪口指向符合视觉预期）下的朝向角，相机球面坐标系，yaw
             // 正右，pitch 正下
             aimer::math::YpdCoord fit_yp = this->converter->pu_to_yp_c(fit.center);
@@ -350,13 +348,21 @@ auto AimCorrector::sample_aim_errors() -> void {
             Eigen::Vector2d yp_error = { caught_yp.yaw - fit_yp.yaw,
                                          caught_yp.pitch - fit_yp.pitch };
             {
-                std::vector<double> r_vec = {
-                    base::get_param<double>("auto-aim.aim-corrector.error.r")
-                };
+                std::vector<double> r_vec = { 1.0 }; // 默认参数
                 const Eigen::Vector2d& correction = bullet.proj.get_aim_ref().correction;
                 // 理想的校正后，yp_error = 0，而 aim_ref 中是之前的 error
-                this->error_filters[0].update(yp_error[0] + correction(0, 0), 0., { 1. }, r_vec);
-                this->error_filters[1].update(yp_error[1] + correction(1, 0), 0., { 1. }, r_vec);
+                this->error_filters[0].update(
+                    Eigen::Matrix<double, 1, 1>(yp_error[0] + correction(0, 0)),
+                    0.,
+                    Eigen::Matrix<double, 1, 1>(1.),
+                    r_vec
+                );
+                this->error_filters[1].update(
+                    Eigen::Matrix<double, 1, 1>(yp_error[1] + correction(1, 0)),
+                    0.,
+                    Eigen::Matrix<double, 1, 1>(1.),
+                    r_vec
+                );
             }
 
             if (this->error_angles.size() + 1u > aim::AIM_CORRECTOR_ERROR_ANGLES_MAX_SZ
@@ -370,20 +376,20 @@ auto AimCorrector::sample_aim_errors() -> void {
             undistorted_detected.erase(best_bullet);
         }
     }
-    {
-        int i = 0;
-        for (auto& d: this->error_angles) {
-            i += 1;
-            aimer::debug::auto_aim_page()
-                ->sub("aim_corrector_采样数据")
-                .sub("error" + std::to_string(i))
-                .get() = fmt::format(
-                "{:.2f}, {:.2f}",
-                aimer::math::rad_to_deg(d(0, 0)),
-                aimer::math::rad_to_deg(d(1, 0))
-            );
-        }
-    }
+    // {
+    //     int i = 0;
+    //     for (auto& d: this->error_angles) {
+    //         i += 1;
+    //         aimer::debug::auto_aim_page()
+    //             ->sub("aim_corrector_采样数据")
+    //             .sub("error" + std::to_string(i))
+    //             .get() = fmt::format(
+    //             "{:.2f}, {:.2f}",
+    //             aimer::math::rad_to_deg(d(0, 0)),
+    //             aimer::math::rad_to_deg(d(1, 0))
+    //         );
+    //     }
+    // }
 }
 
 auto AimCorrector::get_aim_error() const -> Eigen::Vector2d {
