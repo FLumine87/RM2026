@@ -1,0 +1,15 @@
+@PACKAGE_INIT@
+
+set(AUTO_AIM_INTERFACES_INCLUDE_DIRS "@PACKAGE_AUTO_AIM_INTERFACES_INCLUDE_DIRS@")
+
+include_directories(${AUTO_AIM_INTERFACES_INCLUDE_DIRS})
+
+if(NOT TARGET auto_aim_interfaces)
+    add_library(auto_aim_interfaces INTERFACE)
+    target_include_directories(auto_aim_interfaces INTERFACE ${AUTO_AIM_INTERFACES_INCLUDE_DIRS})
+endif()
+
+set_and_check(AUTO_AIM_INTERFACES_LIBRARIES auto_aim_interfaces)
+set_and_check(AUTO_AIM_INTERFACES_INCLUDE_DIRS ${AUTO_AIM_INTERFACES_INCLUDE_DIRS})
+
+check_required_components(auto_aim_interfaces)

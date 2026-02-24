@@ -31,34 +31,20 @@
 #include "visualization_msgs/msg/marker.hpp"
 #include "visualization_msgs/msg/marker_array.hpp"
 
+// 尝试不同的include路径
+#ifdef ROS2_INCLUDE_PATH
+#include <auto_aim_interfaces/msg/armor.hpp>
+#include <auto_aim_interfaces/msg/armors.hpp>
+#include <auto_aim_interfaces/msg/target.hpp>
+#else
+#include "auto_aim_interfaces/msg/armor.hpp"
+#include "auto_aim_interfaces/msg/armors.hpp"
+#include "auto_aim_interfaces/msg/target.hpp"
+#endif
+
 using namespace std::chrono_literals;
 
-struct ArmorMsg
-{
-  std::string number;
-  std::string type;
-  float distance_to_image_center;
-  geometry_msgs::msg::Pose pose;
-  std::vector<geometry_msgs::msg::Point> kpts;
-};
 
-struct TargetMsg
-{
-  std_msgs::msg::Header header;
-  bool tracking;
-  std::string id;
-  int32_t armors_num;
-  float ypd_yaw;
-  float ypd_pitch;
-  float ypd_distance;
-  double yaw;
-  double v_yaw;
-  geometry_msgs::msg::Point position;
-  geometry_msgs::msg::Vector3 velocity;
-  double radius_1;
-  double radius_2;
-  double dz;
-};
 
 class ROS2Publisher : public rclcpp::Node
 {
@@ -69,8 +55,8 @@ public:
     , image_publisher_(this->create_publisher<sensor_msgs::msg::Image>("camera/image_raw", 10))
     // , armor_publisher_(this->create_publisher<sensor_msgs::msg::Image>("armor/image", 10))
     // , target_publisher_(this->create_publisher<sensor_msgs::msg::Image>("target/image", 10))
-    , armor_msg_publisher_(this->create_publisher<std_msgs::msg::String>("armor_msg", 10))
-    , target_msg_publisher_(this->create_publisher<std_msgs::msg::String>("target_msg", 10))
+    , armor_msg_publisher_(this->create_publisher<auto_aim_interfaces::msg::Armors>("armor_msg", 10))
+    , target_msg_publisher_(this->create_publisher<auto_aim_interfaces::msg::Target>("target_msg", 10))
     , marker_pub_(this->create_publisher<visualization_msgs::msg::MarkerArray>("visualization_marker", 10))
   {
     position_marker_.ns = "position";
@@ -148,68 +134,66 @@ public:
     //   target_publisher_->publish(*msg);
   }
 
-  void publish_armor_msg(const std::vector<ArmorMsg> & armors)
+  void publish_armor_msg(const std::vector<auto_aim::Armor> & armors)
   {
-    auto msg = std::make_shared<std_msgs::msg::String>();
+    auto msg = std::make_shared<auto_aim_interfaces::msg::Armors>();
+    msg->header.stamp = this->now();
+    msg->header.frame_id = "world";
     
-    nlohmann::json j = nlohmann::json::array();
     for (const auto & armor : armors) {
-      nlohmann::json armor_json;
-      armor_json["number"] = armor.number;
-      armor_json["type"] = armor.type;
-      armor_json["distance_to_image_center"] = armor.distance_to_image_center;
-      armor_json["pose"]["position"]["x"] = armor.pose.position.x;
-      armor_json["pose"]["position"]["y"] = armor.pose.position.y;
-      armor_json["pose"]["position"]["z"] = armor.pose.position.z;
-      armor_json["pose"]["orientation"]["x"] = armor.pose.orientation.x;
-      armor_json["pose"]["orientation"]["y"] = armor.pose.orientation.y;
-      armor_json["pose"]["orientation"]["z"] = armor.pose.orientation.z;
-      armor_json["pose"]["orientation"]["w"] = armor.pose.orientation.w;
+      auto_aim_interfaces::msg::Armor armor_msg;
+      armor_msg.number = std::to_string(static_cast<int>(armor.name));
+      armor_msg.type = (armor.type == auto_aim::ArmorType::big) ? "big" : "small";
+      armor_msg.distance_to_image_center = static_cast<float>(cv::norm(armor.center - cv::Point2f(640.0f, 360.0f)));
       
-      nlohmann::json kpts_json = nlohmann::json::array();
-      for (const auto & kpt : armor.kpts) {
-        nlohmann::json kpt_json;
-        kpt_json["x"] = kpt.x;
-        kpt_json["y"] = kpt.y;
-        kpt_json["z"] = kpt.z;
-        kpts_json.push_back(kpt_json);
+      armor_msg.pose.position.x = armor.xyz_in_world.x();
+      armor_msg.pose.position.y = armor.xyz_in_world.y();
+      armor_msg.pose.position.z = armor.xyz_in_world.z();
+      
+      armor_msg.pose.orientation.w = 1.0;
+      armor_msg.pose.orientation.x = 0.0;
+      armor_msg.pose.orientation.y = 0.0;
+      armor_msg.pose.orientation.z = 0.0;
+      
+      for (const auto & pt : armor.points) {
+        geometry_msgs::msg::Point kpt;
+        kpt.x = pt.x;
+        kpt.y = pt.y;
+        kpt.z = 0.0;
+        armor_msg.kpts.push_back(kpt);
       }
-      armor_json["kpts"] = kpts_json;
       
-      j.push_back(armor_json);
+      msg->armors.push_back(armor_msg);
     }
-    
-    std::string json_str = j.dump();
-    msg->data = json_str;
     
     armor_msg_publisher_->publish(*msg);
   }
 
-  void publish_target_msg(const TargetMsg & target)
+  void publish_target_msg(const auto_aim::Target & target)
   {
-    auto msg = std::make_shared<std_msgs::msg::String>();
+    auto msg = std::make_shared<auto_aim_interfaces::msg::Target>();
+    msg->header.stamp = this->now();
+    msg->header.frame_id = "world";
+    msg->tracking = true;
+    msg->id = std::to_string(static_cast<int>(target.name));
+    msg->armors_num = static_cast<int32_t>(target.armor_xyza_list().size());
+    msg->position.x = target.ekf_x()[0];
+    msg->position.y = target.ekf_x()[2];
+    msg->position.z = target.ekf_x()[4];
+    msg->velocity.x = target.ekf_x()[1];
+    msg->velocity.y = target.ekf_x()[3];
+    msg->velocity.z = target.ekf_x()[5];
+    msg->yaw = target.ekf_x()[6];
+    msg->v_yaw = target.ekf_x()[7];
+    msg->radius_1 = 0.0;
+    msg->radius_2 = 0.0;
+    msg->dz = target.ekf_x()[4];
     
-    nlohmann::json j;
-    j["tracking"] = target.tracking;
-    j["id"] = target.id;
-    j["armors_num"] = target.armors_num;
-    j["position"]["x"] = target.position.x;
-    j["position"]["y"] = target.position.y;
-    j["position"]["z"] = target.position.z;
-    j["velocity"]["x"] = target.velocity.x;
-    j["velocity"]["y"] = target.velocity.y;
-    j["velocity"]["z"] = target.velocity.z;
-    j["ypd_yaw"] = target.ypd_yaw;
-    j["ypd_pitch"] = target.ypd_pitch;
-    j["ypd_distance"] = target.ypd_distance;
-    j["yaw"] = target.yaw;
-    j["v_yaw"] = target.v_yaw;
-    j["radius_1"] = target.radius_1;
-    j["radius_2"] = target.radius_2;
-    j["dz"] = target.dz;
-    
-    std::string json_str = j.dump();
-    msg->data = json_str;
+    Eigen::Vector3d position(target.ekf_x()[0], target.ekf_x()[2], target.ekf_x()[4]);
+    Eigen::Vector3d ypd = tools::xyz2ypd(position);
+    msg->ypd_yaw = static_cast<float>(ypd[0]);
+    msg->ypd_pitch = static_cast<float>(ypd[1]);
+    msg->ypd_distance = static_cast<float>(ypd[2]);
     
     target_msg_publisher_->publish(*msg);
   }
@@ -294,8 +278,8 @@ public:
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr image_publisher_;
   // rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr armor_publisher_;
   // rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr target_publisher_;
-  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr armor_msg_publisher_;
-  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr target_msg_publisher_;
+  rclcpp::Publisher<auto_aim_interfaces::msg::Armors>::SharedPtr armor_msg_publisher_;
+  rclcpp::Publisher<auto_aim_interfaces::msg::Target>::SharedPtr target_msg_publisher_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_pub_;
 
   visualization_msgs::msg::Marker position_marker_;
@@ -437,58 +421,13 @@ int main(int argc, char * argv[])
         solver.reproject_armor(aim_xyza.head(3), aim_xyza[3], target.armor_type, target.name);
       tools::draw_points(img, image_points, {0, 0, 255});
 
-      std::vector<ArmorMsg> armor_msgs;
-      for (const auto & armor : armors) {
-        ArmorMsg armor_msg;
-        armor_msg.number = std::to_string(static_cast<int>(armor.name));
-        armor_msg.type = (armor.type == auto_aim::ArmorType::big) ? "big" : "small";
-        armor_msg.distance_to_image_center = static_cast<float>(cv::norm(armor.center - cv::Point2f(img.cols / 2.0f, img.rows / 2.0f)));
-        
-        armor_msg.pose.position.x = armor.xyz_in_world.x();
-        armor_msg.pose.position.y = armor.xyz_in_world.y();
-        armor_msg.pose.position.z = armor.xyz_in_world.z();
-        
-        armor_msg.pose.orientation.w = 1.0;
-        armor_msg.pose.orientation.x = 0.0;
-        armor_msg.pose.orientation.y = 0.0;
-        armor_msg.pose.orientation.z = 0.0;
-        
-        for (const auto & pt : armor.points) {
-          geometry_msgs::msg::Point kpt;
-          kpt.x = pt.x;
-          kpt.y = pt.y;
-          kpt.z = 0.0;
-          armor_msg.kpts.push_back(kpt);
-        }
-        
-        armor_msgs.push_back(armor_msg);
-      }
-      ros2_publisher->publish_armor_msg(armor_msgs);
+      // 发布装甲板消息
+      ros2_publisher->publish_armor_msg(armors);
 
-      TargetMsg target_msg;
-      target_msg.header.stamp = ros2_publisher->now();
-      target_msg.tracking = true;
-      target_msg.id = std::to_string(static_cast<int>(target.name));
-      target_msg.armors_num = static_cast<int32_t>(armor_xyza_list.size());
-      target_msg.position.x = target.ekf_x()[0];
-      target_msg.position.y = target.ekf_x()[2];
-      target_msg.position.z = target.ekf_x()[4];
-      target_msg.velocity.x = target.ekf_x()[1];
-      target_msg.velocity.y = target.ekf_x()[3];
-      target_msg.velocity.z = target.ekf_x()[5];
-      target_msg.yaw = target.ekf_x()[6];
-      target_msg.v_yaw = target.ekf_x()[7];
-      target_msg.radius_1 = 0.0;
-      target_msg.radius_2 = 0.0;
-      target_msg.dz = target.ekf_x()[4];
-      
+      // 发布目标消息
+      ros2_publisher->publish_target_msg(target);
+
       Eigen::Vector3d position(target.ekf_x()[0], target.ekf_x()[2], target.ekf_x()[4]);
-      Eigen::Vector3d ypd = tools::xyz2ypd(position);
-      target_msg.ypd_yaw = static_cast<float>(ypd[0]);
-      target_msg.ypd_pitch = static_cast<float>(ypd[1]);
-      target_msg.ypd_distance = static_cast<float>(ypd[2]);
-      ros2_publisher->publish_target_msg(target_msg);
-
       Eigen::Vector3d velocity(target.ekf_x()[1], target.ekf_x()[3], target.ekf_x()[5]);
       Eigen::Vector3d angular_velocity(0, 0, target.ekf_x()[7]);
       

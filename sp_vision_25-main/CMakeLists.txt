@@ -19,13 +19,37 @@ include_directories(${EIGEN3_INCLUDE_DIR})
 include_directories(${OpenCV_INCLUDE_DIRS})
 include_directories(${PROJECT_SOURCE_DIR})
 
+# 先添加auto_aim_interfaces子目录，确保它被构建
+add_subdirectory(auto_aim_interfaces)
 
+# 添加其他子目录
 add_subdirectory(tools)
 add_subdirectory(io)
 add_subdirectory(tasks/auto_aim)
 add_subdirectory(tasks/auto_buff)
 add_subdirectory(tasks/omniperception)
 add_subdirectory(tasks/bullet_detector)
+
+# 查找接口包
+find_package(auto_aim_interfaces QUIET)
+
+# 添加auto_aim_interfaces生成的头文件路径
+if(ament_cmake_FOUND AND rclcpp_FOUND)
+    # 尝试找到auto_aim_interfaces
+    find_package(auto_aim_interfaces QUIET HINTS ${CMAKE_CURRENT_BINARY_DIR}/auto_aim_interfaces)
+    
+    # 添加生成的头文件路径
+    if(auto_aim_interfaces_FOUND)
+        include_directories(${CMAKE_CURRENT_BINARY_DIR}/auto_aim_interfaces/rosidl_generator_cpp)
+        include_directories(${CMAKE_CURRENT_BINARY_DIR}/auto_aim_interfaces/rosidl_typesupport_cpp)
+        message(STATUS "Found auto_aim_interfaces, added include directories")
+    else()
+        # 尝试直接添加可能的头文件路径
+        include_directories(${CMAKE_CURRENT_BINARY_DIR}/auto_aim_interfaces)
+        include_directories(${CMAKE_CURRENT_BINARY_DIR}/auto_aim_interfaces/msg)
+        message(STATUS "Auto_aim_interfaces not found, added direct include directories")
+    endif()
+endif()
 
 ####################src###################
 add_executable(standard src/standard.cpp)
@@ -112,11 +136,13 @@ find_package(ament_cmake QUIET)
 find_package(rclcpp QUIET)
 find_package(std_msgs QUIET)
 find_package(rosidl_typesupport_cpp QUIET)
+find_package(rosidl_default_generators QUIET)
 find_package(sp_msgs QUIET)
 find_package(geometry_msgs QUIET)
 find_package(sensor_msgs QUIET)
 find_package(tf2_msgs QUIET)
 find_package(visualization_msgs QUIET)
+
 # 只有在找到 ROS 环境时才会添加 sentry 和 publish_test
 if(ament_cmake_FOUND AND rclcpp_FOUND AND std_msgs_FOUND AND rosidl_typesupport_cpp_FOUND AND sp_msgs_FOUND)
     # 编译需要 sp_msgs 的程序
@@ -137,11 +163,34 @@ if(ament_cmake_FOUND AND rclcpp_FOUND AND std_msgs_FOUND AND rosidl_typesupport_
     target_link_libraries(topic_loop_test ${OpenCV_LIBS} fmt::fmt tools io)
 endif()
 
-# 单独编译 auto_aim_debug_mpc_rosdebug（不需要 sp_msgs）
-if(ament_cmake_FOUND AND rclcpp_FOUND AND std_msgs_FOUND AND geometry_msgs_FOUND AND sensor_msgs_FOUND AND tf2_msgs_FOUND AND visualization_msgs_FOUND)
+# 只有在找到 ROS 环境时才会添加 auto_aim_debug_mpc_rosdebug
+if(ament_cmake_FOUND AND rclcpp_FOUND AND std_msgs_FOUND AND rosidl_typesupport_cpp_FOUND AND auto_aim_interfaces_FOUND)
+    message(STATUS "ROS2 dependencies found, building auto_aim_debug_mpc_rosdebug")
+    
+    # 添加可执行文件
     add_executable(auto_aim_debug_mpc_rosdebug src/auto_aim_debug_mpc_rosdebug.cpp)
+    
+    # 添加基本依赖
     target_link_libraries(auto_aim_debug_mpc_rosdebug ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim tools io)
-    ament_target_dependencies(auto_aim_debug_mpc_rosdebug rclcpp std_msgs geometry_msgs sensor_msgs tf2_msgs visualization_msgs)
+    
+    # 添加 ROS 依赖
+    ament_target_dependencies(auto_aim_debug_mpc_rosdebug 
+        rclcpp 
+        std_msgs 
+        geometry_msgs 
+        sensor_msgs 
+        tf2_msgs 
+        visualization_msgs 
+        auto_aim_interfaces
+    )
+    
+    # 尝试链接消息库
+    if(TARGET auto_aim_interfaces__rosidl_typesupport_cpp)
+        message(STATUS "Linking against auto_aim_interfaces__rosidl_typesupport_cpp")
+        target_link_libraries(auto_aim_debug_mpc_rosdebug auto_aim_interfaces__rosidl_typesupport_cpp)
+    endif()
+else()
+    message(STATUS "ROS2 dependencies not found, skipping auto_aim_debug_mpc_rosdebug")
 endif()
 
 if(NOT ament_cmake_FOUND OR NOT rclcpp_FOUND OR NOT std_msgs_FOUND OR NOT rosidl_typesupport_cpp_FOUND)
