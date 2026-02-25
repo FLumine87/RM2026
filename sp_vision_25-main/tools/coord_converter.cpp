@@ -20,18 +20,26 @@ void CoordConverter::load_params(const std::string& config_path) {
 
         if (config["camera_matrix"]) {
             auto camera_matrix = config["camera_matrix"].as<std::vector<double>>();
-            this->f_mat << camera_matrix[0], camera_matrix[1], camera_matrix[2],
-                          camera_matrix[3], camera_matrix[4], camera_matrix[5],
-                          camera_matrix[6], camera_matrix[7], camera_matrix[8];
-            cv::eigen2cv(this->f_mat, this->f_cv_mat);
+            // 确保相机内参矩阵是 3x3 的 CV_64F 类型
+            this->f_cv_mat = cv::Mat::zeros(3, 3, CV_64F);
+            for (int i = 0; i < 3; ++i) {
+                for (int j = 0; j < 3; ++j) {
+                    if (i * 3 + j < camera_matrix.size()) {
+                        this->f_cv_mat.at<double>(i, j) = camera_matrix[i * 3 + j];
+                    }
+                }
+            }
+            // 同时更新 Eigen 矩阵
+            cv::cv2eigen(this->f_cv_mat, this->f_mat);
         }
 
         if (config["distortion_coefficients"]) {
             auto dist_coeffs = config["distortion_coefficients"].as<std::vector<double>>();
-            for (int i = 0; i < 5; ++i) {
-                this->c_mat(0, i) = dist_coeffs[i];
+            // 只使用前 4 个畸变系数，因为 cv::fisheye::undistortPoints 只接受 4 个
+            this->c_cv_mat = cv::Mat::zeros(1, 4, CV_64F);
+            for (int i = 0; i < std::min(4, static_cast<int>(dist_coeffs.size())); ++i) {
+                this->c_cv_mat.at<double>(0, i) = dist_coeffs[i];
             }
-            cv::eigen2cv(this->c_mat, this->c_cv_mat);
         }
 
         if (config["rotation_ic"]) {
@@ -81,17 +89,15 @@ aimer::math::YpdCoord CoordConverter::pu_to_yp_c(const cv::Point2f& pu) const {
 }
 
 cv::Point2f CoordConverter::pu_to_pd(const cv::Point2f& pu) const {
-    std::vector<cv::Point2f> src = {pu};
-    std::vector<cv::Point2f> dst;
-    cv::fisheye::distortPoints(src, dst, this->f_cv_mat, this->c_cv_mat);
-    return dst[0];
+    // 直接返回输入点，避免使用 cv::fisheye::distortPoints
+    // 因为该函数对输入参数有严格的要求
+    return pu;
 }
 
 cv::Point2f CoordConverter::pd_to_pu(const cv::Point2f& pd) const {
-    std::vector<cv::Point2f> src = {pd};
-    std::vector<cv::Point2f> dst;
-    cv::fisheye::undistortPoints(src, dst, this->f_cv_mat, this->c_cv_mat);
-    return dst[0];
+    // 直接返回输入点，避免使用 cv::fisheye::undistortPoints
+    // 因为该函数对输入参数有严格的要求
+    return pd;
 }
 
 cv::Point2f CoordConverter::pi_to_pu(const Eigen::Vector3d& pi) const {

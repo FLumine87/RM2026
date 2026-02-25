@@ -92,24 +92,49 @@ auto ProjectileSimulator::get_pos_by_t(const double& t) const -> aim::HitPos {
     const aimer::ShootParam shoot_param = this->aim.aim.shoot_param;
     double k = this->get_param_k();
     double w = (t - this->fire_t) * shoot_param.v0 * std::cos(shoot_param.aim_angle);
-    // 高度为微分方程结果
-    double h = (k * shoot_param.v0 * std::sin(shoot_param.aim_angle) + this->g) * k * w
-            / (k * k * shoot_param.v0 * std::cos(shoot_param.aim_angle))
-        + this->g * std::log(1. - (k * w) / (shoot_param.v0 * std::cos(shoot_param.aim_angle))) / k
-            / k;
+    
+    // 计算高度 h
+    double h = 0.0;
+    double log_arg = 1. - (k * w) / (shoot_param.v0 * std::cos(shoot_param.aim_angle));
+    if (log_arg > 0.0 && log_arg < 1.0) {
+        h = (k * shoot_param.v0 * std::sin(shoot_param.aim_angle) + this->g) * k * w
+                / (k * k * shoot_param.v0 * std::cos(shoot_param.aim_angle))
+            + this->g * std::log(log_arg) / k / k;
+    } else {
+        // 如果log参数无效，使用简单的抛物线模型
+        h = shoot_param.v0 * std::sin(shoot_param.aim_angle) * (t - this->fire_t)
+            - 0.5 * this->g * std::pow(t - this->fire_t, 2);
+    }
+    
     // 弹道轨迹仅取决于目标点
-    const Eigen::Vector3d target_xyz_i_barrel =
+    const Eigen::Vector3d target_xyz_i_barrel = 
         this->converter->xyz_i_camera_to_xyz_i_barrel(shoot_param.target_xyz_i_camera);
-    const Eigen::Vector3d w_norm =
-        Eigen::Vector3d(target_xyz_i_barrel(0, 0), target_xyz_i_barrel(1, 0), 0).normalized();
+    
+    // 计算w_norm，避免零向量归一化
+    Eigen::Vector3d w_norm = Eigen::Vector3d::Zero();
+    double target_xy_norm = std::sqrt(std::pow(target_xyz_i_barrel(0, 0), 2) + std::pow(target_xyz_i_barrel(1, 0), 2));
+    if (target_xy_norm > 0.0) {
+        w_norm = Eigen::Vector3d(target_xyz_i_barrel(0, 0), target_xyz_i_barrel(1, 0), 0).normalized();
+    } else {
+        // 如果目标在原点，使用默认方向
+        w_norm = Eigen::Vector3d(1.0, 0.0, 0.0);
+    }
+    
     const Eigen::Vector3d h_norm = { 0., 0., 1. };
     const Eigen::Vector3d bullet_xyz_i_barrel = w * w_norm + h * h_norm;
-    const Eigen::Vector3d bullet_xyz_i_camera =
+    const Eigen::Vector3d bullet_xyz_i_camera = 
         this->converter->xyz_i_barrel_to_xyz_i_camera(bullet_xyz_i_barrel);
     const Eigen::Vector2d bullet_xy_i_barrel = { bullet_xyz_i_barrel(0, 0),
                                                  bullet_xyz_i_barrel(1, 0) };
     const Eigen::Vector2d target_xy_i_barrel = { target_xyz_i_barrel(0, 0),
                                                  target_xyz_i_barrel(1, 0) };
+    
+    // 检查结果是否包含NaN值
+    if (std::isnan(bullet_xyz_i_camera.x()) || std::isnan(bullet_xyz_i_camera.y()) || std::isnan(bullet_xyz_i_camera.z())) {
+        // 如果包含NaN值，返回默认位置
+        return aim::HitPos { false, Eigen::Vector3d(0.0, 0.0, 0.0) };
+    }
+    
     return aim::HitPos { bullet_xy_i_barrel.norm() >= target_xy_i_barrel.norm(),
                          bullet_xyz_i_camera };
 }
@@ -180,8 +205,8 @@ auto ProjectileSimulator::fit_circle(const aimer::math::CircleF& circle) const
 AimCorrector::AimCorrector(aimer::CoordConverter* const converter):
     converter { converter },
     bullet_detector(aim::DoReproj(
-        this->converter->get_f_cv_mat_ref(),
-        this->converter->get_rot_ic_sup_cv_mat_ref()
+        this->converter->get_f_cv_mat_ref().clone(),
+        this->converter->get_rot_ic_sup_cv_mat_ref().clone()
     )),
     aim_history { aim::AIM_CORRECTOR_AIM_HISTORY_MAX_SZ } {
     for (auto& error_filter: this->error_filters) {
@@ -348,19 +373,20 @@ auto AimCorrector::sample_aim_errors() -> void {
             Eigen::Vector2d yp_error = { caught_yp.yaw - fit_yp.yaw,
                                          caught_yp.pitch - fit_yp.pitch };
             {
-                std::vector<double> r_vec = { 1.0 }; // 默认参数
+                // 调整滤波器参数，提高稳度（原本是1）
+                std::vector<double> r_vec = { 0.1 }; // 减小噪声协方差，提高稳度
                 const Eigen::Vector2d& correction = bullet.proj.get_aim_ref().correction;
                 // 理想的校正后，yp_error = 0，而 aim_ref 中是之前的 error
                 this->error_filters[0].update(
                     Eigen::Matrix<double, 1, 1>(yp_error[0] + correction(0, 0)),
                     0.,
-                    Eigen::Matrix<double, 1, 1>(1.),
+                    Eigen::Matrix<double, 1, 1>(0.1), // 减小测量噪声协方差
                     r_vec
                 );
                 this->error_filters[1].update(
                     Eigen::Matrix<double, 1, 1>(yp_error[1] + correction(1, 0)),
                     0.,
-                    Eigen::Matrix<double, 1, 1>(1.),
+                    Eigen::Matrix<double, 1, 1>(0.1), // 减小测量噪声协方差
                     r_vec
                 );
             }

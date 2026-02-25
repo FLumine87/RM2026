@@ -11,13 +11,27 @@ DoReproj::DoReproj() {}
 
 void DoReproj::init(const cv::Mat& cam, const cv::Mat& imu) {
     this->cam = Eigen::Matrix4d();
-    Eigen::Matrix<double, 3, 4> mat;
-    cv::cv2eigen(cam, mat);
-    // for inversibility (théorème de factorisation)
-    this->cam.block<3, 4>(0, 0) = mat;
-    this->cam(3, 3) = 1;
+    
+    // 处理相机矩阵
+    if (cam.rows == 3 && cam.cols == 3) {
+        // 如果是 3x3 相机内参矩阵，扩展为 4x4 矩阵
+        Eigen::Matrix3d mat_3x3;
+        cv::cv2eigen(cam, mat_3x3);
+        this->cam.block<3, 3>(0, 0) = mat_3x3;
+        this->cam.block<3, 1>(0, 3) = Eigen::Vector3d::Zero();
+        this->cam(3, 3) = 1;
+    } else if (cam.rows == 3 && cam.cols == 4) {
+        // 如果是 3x4 投影矩阵，直接使用
+        Eigen::Matrix<double, 3, 4> mat_3x4;
+        cv::cv2eigen(cam, mat_3x4);
+        this->cam.block<3, 4>(0, 0) = mat_3x4;
+        this->cam(3, 3) = 1;
+    }
 
-    cv::cv2eigen(imu, this->imu);
+    // 处理 IMU 旋转矩阵
+    if (imu.rows == 3 && imu.cols == 3) {
+        cv::cv2eigen(imu, this->imu);
+    }
 }
 
 DoReproj::DoReproj(const cv::Mat& cam, const cv::Mat& imu) {
