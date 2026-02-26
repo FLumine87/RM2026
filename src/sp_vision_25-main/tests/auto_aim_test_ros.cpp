@@ -493,10 +493,13 @@ int main(int argc, char * argv[])
     // 发布图像
     ros2_publisher->publish_image(img, "camera/image_raw");
 
-    cv::resize(img, img, {}, 0.5, 0.5);  // 显示时缩小图片尺寸
-    cv::imshow("reprojection", img);
-    int key = cv::waitKey(30);
-    if (key == 'q') break;
+    // cv::resize(img, img, {}, 0.5, 0.5);  // 显示时缩小图片尺寸
+    // cv::imshow("reprojection", img);
+    // int key = cv::waitKey(30);
+    // if (key == 'q') break;
+    
+    // 添加时间延迟，使视频播放速度接近正常速度
+    std::this_thread::sleep_for(std::chrono::milliseconds(30));
   }
 
   // 退出

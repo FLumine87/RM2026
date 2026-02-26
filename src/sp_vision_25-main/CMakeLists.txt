@@ -19,9 +19,6 @@ include_directories(${EIGEN3_INCLUDE_DIR})
 include_directories(${OpenCV_INCLUDE_DIRS})
 include_directories(${PROJECT_SOURCE_DIR})
 
-# 先添加auto_aim_interfaces子目录，确保它被构建
-add_subdirectory(auto_aim_interfaces)
-
 # 添加其他子目录
 add_subdirectory(tools)
 add_subdirectory(io)
@@ -30,25 +27,17 @@ add_subdirectory(tasks/auto_buff)
 add_subdirectory(tasks/omniperception)
 add_subdirectory(tasks/bullet_detector)
 
-# 查找接口包
-find_package(auto_aim_interfaces QUIET)
+# 查找接口包 - 现在通过colcon构建，在install目录中
+# 跳过有问题的find_package调用，直接添加头文件路径
+set(auto_aim_interfaces_FOUND 1)
+message(STATUS "Forcing auto_aim_interfaces_FOUND=1 to avoid config file errors")
 
-# 添加auto_aim_interfaces生成的头文件路径
+# 强制添加接口包的头文件路径
 if(ament_cmake_FOUND AND rclcpp_FOUND)
-    # 尝试找到auto_aim_interfaces
-    find_package(auto_aim_interfaces QUIET HINTS ${CMAKE_CURRENT_BINARY_DIR}/auto_aim_interfaces)
-    
-    # 添加生成的头文件路径
-    if(auto_aim_interfaces_FOUND)
-        include_directories(${CMAKE_CURRENT_BINARY_DIR}/auto_aim_interfaces/rosidl_generator_cpp)
-        include_directories(${CMAKE_CURRENT_BINARY_DIR}/auto_aim_interfaces/rosidl_typesupport_cpp)
-        message(STATUS "Found auto_aim_interfaces, added include directories")
-    else()
-        # 尝试直接添加可能的头文件路径
-        include_directories(${CMAKE_CURRENT_BINARY_DIR}/auto_aim_interfaces)
-        include_directories(${CMAKE_CURRENT_BINARY_DIR}/auto_aim_interfaces/msg)
-        message(STATUS "Auto_aim_interfaces not found, added direct include directories")
-    endif()
+    # 直接添加接口包的头文件路径
+    message(STATUS "Adding direct include paths for auto_aim_interfaces")
+    include_directories("${CMAKE_CURRENT_SOURCE_DIR}/../../install/auto_aim_interfaces/include")
+    include_directories("${CMAKE_CURRENT_SOURCE_DIR}/../../install/auto_aim_interfaces/include/auto_aim_interfaces")
 endif()
 
 ####################src###################
@@ -56,7 +45,6 @@ add_executable(standard src/standard.cpp)
 add_executable(mt_standard src/mt_standard.cpp)
 add_executable(standard_mpc src/standard_mpc.cpp)
 add_executable(auto_aim_debug_mpc src/auto_aim_debug_mpc.cpp)
-add_executable(auto_aim_debug_mpc_bc src/auto_aim_debug_mpc_bc.cpp)
 add_executable(mt_auto_aim_debug src/mt_auto_aim_debug.cpp)
 add_executable(auto_buff_debug src/auto_buff_debug.cpp)
 add_executable(auto_buff_debug_mpc src/auto_buff_debug_mpc.cpp)
@@ -67,7 +55,6 @@ target_link_libraries(standard ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim auto_bu
 target_link_libraries(mt_standard ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim auto_buff tools io)
 target_link_libraries(standard_mpc ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim auto_buff tools io)
 target_link_libraries(auto_aim_debug_mpc ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim auto_buff tools io)
-target_link_libraries(auto_aim_debug_mpc_bc ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim auto_buff tools io bullet_detector)
 target_link_libraries(mt_auto_aim_debug ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim auto_buff tools io)
 target_link_libraries(auto_buff_debug ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_buff tools io ${CERES_LIBRARIES})
 target_link_libraries(auto_buff_debug_mpc ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_buff tools io ${CERES_LIBRARIES})
@@ -180,13 +167,12 @@ message(STATUS "=========================")
 if(ament_cmake_FOUND AND rclcpp_FOUND AND std_msgs_FOUND AND geometry_msgs_FOUND)
     message(STATUS "ROS2 dependencies found, building ROS2-related executables")
     
-    # 尝试找到auto_aim_interfaces
-    find_package(auto_aim_interfaces QUIET HINTS ${CMAKE_CURRENT_BINARY_DIR}/auto_aim_interfaces)
+    # 跳过有问题的find_package调用
+    # find_package(auto_aim_interfaces QUIET HINTS ${CMAKE_CURRENT_BINARY_DIR}/auto_aim_interfaces)
     
     # 强制添加包含路径，确保能找到生成的头文件
-    include_directories(${CMAKE_CURRENT_BINARY_DIR}/auto_aim_interfaces)
-    include_directories(${CMAKE_CURRENT_BINARY_DIR}/auto_aim_interfaces/rosidl_generator_cpp)
-    include_directories(${CMAKE_CURRENT_BINARY_DIR}/auto_aim_interfaces/rosidl_typesupport_cpp)
+    include_directories("${CMAKE_CURRENT_SOURCE_DIR}/../../install/auto_aim_interfaces/include")
+    include_directories("${CMAKE_CURRENT_SOURCE_DIR}/../../install/auto_aim_interfaces/include/auto_aim_interfaces")
     
     # 添加 auto_aim_debug_mpc_rosdebug 可执行文件
     add_executable(auto_aim_debug_mpc_rosdebug src/auto_aim_debug_mpc_rosdebug.cpp)
@@ -204,12 +190,19 @@ if(ament_cmake_FOUND AND rclcpp_FOUND AND std_msgs_FOUND AND geometry_msgs_FOUND
         visualization_msgs
     )
     
-    # 尝试链接auto_aim_interfaces（如果存在）
-    if(TARGET auto_aim_interfaces__rosidl_typesupport_cpp)
-        message(STATUS "Linking against auto_aim_interfaces__rosidl_typesupport_cpp")
-        target_link_libraries(auto_aim_debug_mpc_rosdebug auto_aim_interfaces__rosidl_typesupport_cpp)
+    # 直接链接类型支持库（如果存在）
+    set(AUTO_AIM_INTERFACES_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../install/auto_aim_interfaces/lib")
+    if(EXISTS "${AUTO_AIM_INTERFACES_LIB_DIR}")
+        # 查找所有类型支持库文件
+        file(GLOB AUTO_AIM_INTERFACES_LIBS "${AUTO_AIM_INTERFACES_LIB_DIR}/libauto_aim_interfaces__rosidl_typesupport_*.so")
+        if(AUTO_AIM_INTERFACES_LIBS)
+            message(STATUS "Linking against auto_aim_interfaces typesupport libraries: ${AUTO_AIM_INTERFACES_LIBS}")
+            target_link_libraries(auto_aim_debug_mpc_rosdebug ${AUTO_AIM_INTERFACES_LIBS})
+        else()
+            message(WARNING "No auto_aim_interfaces typesupport libraries found in ${AUTO_AIM_INTERFACES_LIB_DIR}")
+        endif()
     else()
-        message(WARNING "auto_aim_interfaces__rosidl_typesupport_cpp target not found, trying direct include")
+        message(WARNING "auto_aim_interfaces lib directory not found: ${AUTO_AIM_INTERFACES_LIB_DIR}")
     endif()
     
     # 添加 auto_aim_test_ros 可执行文件
@@ -228,18 +221,89 @@ if(ament_cmake_FOUND AND rclcpp_FOUND AND std_msgs_FOUND AND geometry_msgs_FOUND
         visualization_msgs
     )
     
-    # 尝试链接auto_aim_interfaces（如果存在）
-    if(TARGET auto_aim_interfaces__rosidl_typesupport_cpp)
-        message(STATUS "Linking against auto_aim_interfaces__rosidl_typesupport_cpp for auto_aim_test_ros")
-        target_link_libraries(auto_aim_test_ros auto_aim_interfaces__rosidl_typesupport_cpp)
+    # 直接链接类型支持库（如果存在）
+    set(AUTO_AIM_INTERFACES_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../install/auto_aim_interfaces/lib")
+    if(EXISTS "${AUTO_AIM_INTERFACES_LIB_DIR}")
+        # 查找所有类型支持库文件
+        file(GLOB AUTO_AIM_INTERFACES_LIBS "${AUTO_AIM_INTERFACES_LIB_DIR}/libauto_aim_interfaces__rosidl_typesupport_*.so")
+        if(AUTO_AIM_INTERFACES_LIBS)
+            message(STATUS "Linking against auto_aim_interfaces typesupport libraries for auto_aim_test_ros: ${AUTO_AIM_INTERFACES_LIBS}")
+            target_link_libraries(auto_aim_test_ros ${AUTO_AIM_INTERFACES_LIBS})
+        else()
+            message(WARNING "No auto_aim_interfaces typesupport libraries found in ${AUTO_AIM_INTERFACES_LIB_DIR}")
+        endif()
     else()
-        message(WARNING "auto_aim_interfaces__rosidl_typesupport_cpp target not found for auto_aim_test_ros, trying direct include")
+        message(WARNING "auto_aim_interfaces lib directory not found: ${AUTO_AIM_INTERFACES_LIB_DIR}")
+    endif()
+    
+# 添加 auto_aim_debug_mpc_bc 可执行文件
+    add_executable(auto_aim_debug_mpc_bc src/auto_aim_debug_mpc_bc.cpp)
+    
+    # 添加基本依赖
+    target_link_libraries(auto_aim_debug_mpc_bc ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim tools io bullet_detector)
+    
+    # 添加 ROS 依赖
+    ament_target_dependencies(auto_aim_debug_mpc_bc 
+        rclcpp 
+        std_msgs 
+        geometry_msgs 
+        sensor_msgs 
+        tf2_msgs 
+        visualization_msgs
+    )
+    
+    # 直接链接类型支持库（如果存在）
+    set(AUTO_AIM_INTERFACES_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../install/auto_aim_interfaces/lib")
+    if(EXISTS "${AUTO_AIM_INTERFACES_LIB_DIR}")
+        # 查找所有类型支持库文件
+        file(GLOB AUTO_AIM_INTERFACES_LIBS "${AUTO_AIM_INTERFACES_LIB_DIR}/libauto_aim_interfaces__rosidl_typesupport_*.so")
+        if(AUTO_AIM_INTERFACES_LIBS)
+            message(STATUS "Linking against auto_aim_interfaces typesupport libraries for auto_aim_debug_mpc_bc: ${AUTO_AIM_INTERFACES_LIBS}")
+            target_link_libraries(auto_aim_debug_mpc_bc ${AUTO_AIM_INTERFACES_LIBS})
+        else()
+            message(WARNING "No auto_aim_interfaces typesupport libraries found in ${AUTO_AIM_INTERFACES_LIB_DIR}")
+        endif()
+    else()
+        message(WARNING "auto_aim_interfaces lib directory not found: ${AUTO_AIM_INTERFACES_LIB_DIR}")
+    endif()
+    
+    # 添加 bullet_dectetor_rostest 可执行文件
+    add_executable(bullet_dectetor_rostest tests/bullet_dectetor_rostest.cpp)
+    
+    # 添加基本依赖
+    target_link_libraries(bullet_dectetor_rostest ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim tools io bullet_detector)
+    
+    # 添加 ROS 依赖
+    ament_target_dependencies(bullet_dectetor_rostest 
+        rclcpp 
+        std_msgs 
+        geometry_msgs 
+        sensor_msgs 
+        tf2_msgs 
+        visualization_msgs
+    )
+    
+    # 直接链接类型支持库（如果存在）
+    set(AUTO_AIM_INTERFACES_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../install/auto_aim_interfaces/lib")
+    if(EXISTS "${AUTO_AIM_INTERFACES_LIB_DIR}")
+        # 查找所有类型支持库文件
+        file(GLOB AUTO_AIM_INTERFACES_LIBS "${AUTO_AIM_INTERFACES_LIB_DIR}/libauto_aim_interfaces__rosidl_typesupport_*.so")
+        if(AUTO_AIM_INTERFACES_LIBS)
+            message(STATUS "Linking against auto_aim_interfaces typesupport libraries for bullet_dectetor_rostest: ${AUTO_AIM_INTERFACES_LIBS}")
+            target_link_libraries(bullet_dectetor_rostest ${AUTO_AIM_INTERFACES_LIBS})
+        else()
+            message(WARNING "No auto_aim_interfaces typesupport libraries found in ${AUTO_AIM_INTERFACES_LIB_DIR}")
+        endif()
+    else()
+        message(WARNING "auto_aim_interfaces lib directory not found: ${AUTO_AIM_INTERFACES_LIB_DIR}")
     endif()
 else()
     message(WARNING "ROS2 dependencies not fully found, skipping ROS2-related executables")
     # 即使条件不满足，也添加目标但不构建，这样至少可以看到目标存在
     add_custom_target(auto_aim_test_ros COMMENT "auto_aim_test_ros requires ROS2 dependencies")
     add_custom_target(auto_aim_debug_mpc_rosdebug COMMENT "auto_aim_debug_mpc_rosdebug requires ROS2 dependencies")
+    add_custom_target(auto_aim_debug_mpc_bc COMMENT "auto_aim_debug_mpc_bc requires ROS2 dependencies")
+    add_custom_target(bullet_dectetor_rostest COMMENT "bullet_dectetor_rostest requires ROS2 dependencies")
 endif()
 
 if(NOT ament_cmake_FOUND OR NOT rclcpp_FOUND OR NOT std_msgs_FOUND OR NOT rosidl_typesupport_cpp_FOUND)
