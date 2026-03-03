@@ -35,10 +35,12 @@
 #include <auto_aim_interfaces/msg/armor.hpp>
 #include <auto_aim_interfaces/msg/armors.hpp>
 #include <auto_aim_interfaces/msg/target.hpp>
+#include <auto_aim_interfaces/msg/gimbal.hpp>
 #else
 #include "auto_aim_interfaces/msg/armor.hpp"
 #include "auto_aim_interfaces/msg/armors.hpp"
 #include "auto_aim_interfaces/msg/target.hpp"
+#include "auto_aim_interfaces/msg/gimbal.hpp"
 #endif
 
 using namespace std::chrono_literals;
@@ -52,6 +54,7 @@ public:
     , image_publisher_(this->create_publisher<sensor_msgs::msg::Image>("camera/image_raw", 10))
     , armor_msg_publisher_(this->create_publisher<auto_aim_interfaces::msg::Armors>("armor_msg", 10))
     , target_msg_publisher_(this->create_publisher<auto_aim_interfaces::msg::Target>("target_msg", 10))
+    , gimbal_msg_publisher_(this->create_publisher<auto_aim_interfaces::msg::Gimbal>("gimbal_msg", 10))
     , marker_pub_(this->create_publisher<visualization_msgs::msg::MarkerArray>("visualization_marker", 10))
   {
     position_marker_.ns = "position";
@@ -189,6 +192,23 @@ public:
     target_msg_publisher_->publish(*msg);
   }
 
+  void publish_gimbal_msg(const io::Command & command)
+  {
+    auto msg = std::make_shared<auto_aim_interfaces::msg::Gimbal>();
+    msg->header.stamp = this->now();
+    msg->header.frame_id = "gimbal";
+    msg->control = command.control;
+    msg->fire = command.shoot;
+    msg->yaw = command.yaw;
+    msg->yaw_vel = 0.0; // Command中没有速度和加速度信息
+    msg->yaw_acc = 0.0;
+    msg->pitch = command.pitch;
+    msg->pitch_vel = 0.0;
+    msg->pitch_acc = 0.0;
+    
+    gimbal_msg_publisher_->publish(*msg);
+  }
+
   void publish_marker(
     bool tracking, const Eigen::Vector3d & position, const Eigen::Vector3d & velocity, 
     const Eigen::Vector3d & angular_velocity, const std::vector<Eigen::Vector3d> & armor_positions,
@@ -269,6 +289,7 @@ public:
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr image_publisher_;
   rclcpp::Publisher<auto_aim_interfaces::msg::Armors>::SharedPtr armor_msg_publisher_;
   rclcpp::Publisher<auto_aim_interfaces::msg::Target>::SharedPtr target_msg_publisher_;
+  rclcpp::Publisher<auto_aim_interfaces::msg::Gimbal>::SharedPtr gimbal_msg_publisher_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_pub_;
 
   visualization_msgs::msg::Marker position_marker_;
@@ -469,6 +490,7 @@ int main(int argc, char * argv[])
       std::vector<auto_aim::Armor> armor_vector(armors.begin(), armors.end());
       ros2_publisher->publish_armor_msg(armor_vector);
       ros2_publisher->publish_target_msg(target);
+      ros2_publisher->publish_gimbal_msg(command);
 
       // 发布标记
       Eigen::Vector3d position(target.ekf_x()[0], target.ekf_x()[2], target.ekf_x()[4]);

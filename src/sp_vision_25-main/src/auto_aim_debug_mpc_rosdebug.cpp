@@ -36,10 +36,12 @@
 #include <auto_aim_interfaces/msg/armor.hpp>
 #include <auto_aim_interfaces/msg/armors.hpp>
 #include <auto_aim_interfaces/msg/target.hpp>
+#include <auto_aim_interfaces/msg/gimbal.hpp>
 #else
 #include "auto_aim_interfaces/msg/armor.hpp"
 #include "auto_aim_interfaces/msg/armors.hpp"
 #include "auto_aim_interfaces/msg/target.hpp"
+#include "auto_aim_interfaces/msg/gimbal.hpp"
 #endif
 
 using namespace std::chrono_literals;
@@ -57,6 +59,7 @@ public:
     // , target_publisher_(this->create_publisher<sensor_msgs::msg::Image>("target/image", 10))
     , armor_msg_publisher_(this->create_publisher<auto_aim_interfaces::msg::Armors>("armor_msg", 10))
     , target_msg_publisher_(this->create_publisher<auto_aim_interfaces::msg::Target>("target_msg", 10))
+    , gimbal_msg_publisher_(this->create_publisher<auto_aim_interfaces::msg::Gimbal>("gimbal_msg", 10))
     , marker_pub_(this->create_publisher<visualization_msgs::msg::MarkerArray>("visualization_marker", 10))
   {
     position_marker_.ns = "position";
@@ -198,6 +201,23 @@ public:
     target_msg_publisher_->publish(*msg);
   }
 
+  void publish_gimbal_msg(const auto_aim::Plan & plan)
+  {
+    auto msg = std::make_shared<auto_aim_interfaces::msg::Gimbal>();
+    msg->header.stamp = this->now();
+    msg->header.frame_id = "gimbal";
+    msg->control = plan.control;
+    msg->fire = plan.fire;
+    msg->yaw = plan.yaw;
+    msg->yaw_vel = plan.yaw_vel;
+    msg->yaw_acc = plan.yaw_acc;
+    msg->pitch = plan.pitch;
+    msg->pitch_vel = plan.pitch_vel;
+    msg->pitch_acc = plan.pitch_acc;
+    
+    gimbal_msg_publisher_->publish(*msg);
+  }
+
   void publish_marker(
     bool tracking, const Eigen::Vector3d & position, const Eigen::Vector3d & velocity, 
     const Eigen::Vector3d & angular_velocity, const std::vector<Eigen::Vector3d> & armor_positions,
@@ -280,6 +300,7 @@ public:
   // rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr target_publisher_;
   rclcpp::Publisher<auto_aim_interfaces::msg::Armors>::SharedPtr armor_msg_publisher_;
   rclcpp::Publisher<auto_aim_interfaces::msg::Target>::SharedPtr target_msg_publisher_;
+  rclcpp::Publisher<auto_aim_interfaces::msg::Gimbal>::SharedPtr gimbal_msg_publisher_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_pub_;
 
   visualization_msgs::msg::Marker position_marker_;
