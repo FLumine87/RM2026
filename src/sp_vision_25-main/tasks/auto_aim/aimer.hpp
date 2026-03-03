@@ -18,6 +18,8 @@ struct AimPoint
   Eigen::Vector4d xyza;
 };
 
+struct Plan;
+
 class Aimer
 {
 public:
@@ -30,6 +32,12 @@ public:
   io::Command aim(
     std::list<Target> targets, std::chrono::steady_clock::time_point timestamp, double bullet_speed,
     io::ShootMode shoot_mode, bool to_now = true);
+
+  io::Command aim_with_plan(
+    const std::list<Target> & targets,
+    const Plan & plan,
+    std::chrono::steady_clock::time_point timestamp,
+    double bullet_speed);
 
 private:
   double yaw_offset_;

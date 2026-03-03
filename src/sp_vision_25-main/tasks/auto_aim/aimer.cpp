@@ -5,6 +5,7 @@
 #include <cmath>
 #include <vector>
 
+#include "tasks/auto_aim/planner/planner.hpp"
 #include "tools/logger.hpp"
 #include "tools/math_tools.hpp"
 #include "tools/trajectory.hpp"
@@ -206,6 +207,20 @@ AimPoint Aimer::choose_aim_point(const Target & target)
   }
 
   return {false, armor_xyza_list[0]};
+}
+
+io::Command Aimer::aim_with_plan(
+  const std::list<Target> & targets,
+  const Plan & plan,
+  std::chrono::steady_clock::time_point timestamp,
+  double bullet_speed)
+{
+  if (targets.empty()) return {false, false, 0, 0};
+
+  debug_aim_point.valid = plan.control;
+  debug_aim_point.xyza = Eigen::Vector4d::Zero();
+
+  return {plan.control, plan.fire, plan.yaw, plan.pitch};
 }
 
 }  // namespace auto_aim

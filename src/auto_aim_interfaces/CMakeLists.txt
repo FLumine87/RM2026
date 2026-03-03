@@ -30,6 +30,7 @@ if(ament_cmake_FOUND AND rosidl_default_generators_FOUND AND std_msgs_FOUND AND 
       "msg/Armors.msg"
       "msg/Target.msg"
       "msg/Gimbal.msg"
+      "msg/GimbalFeedback.msg"
       DEPENDENCIES std_msgs geometry_msgs
     )
     

@@ -37,11 +37,13 @@
 #include <auto_aim_interfaces/msg/armors.hpp>
 #include <auto_aim_interfaces/msg/target.hpp>
 #include <auto_aim_interfaces/msg/gimbal.hpp>
+#include <auto_aim_interfaces/msg/gimbal_feedback.hpp>
 #else
 #include "auto_aim_interfaces/msg/armor.hpp"
 #include "auto_aim_interfaces/msg/armors.hpp"
 #include "auto_aim_interfaces/msg/target.hpp"
 #include "auto_aim_interfaces/msg/gimbal.hpp"
+#include "auto_aim_interfaces/msg/gimbal_feedback.hpp"
 #endif
 
 using namespace std::chrono_literals;
@@ -60,6 +62,7 @@ public:
     , armor_msg_publisher_(this->create_publisher<auto_aim_interfaces::msg::Armors>("armor_msg", 10))
     , target_msg_publisher_(this->create_publisher<auto_aim_interfaces::msg::Target>("target_msg", 10))
     , gimbal_msg_publisher_(this->create_publisher<auto_aim_interfaces::msg::Gimbal>("gimbal_msg", 10))
+    , gimbal_feedback_publisher_(this->create_publisher<auto_aim_interfaces::msg::GimbalFeedback>("gimbal_feedback", 10))
     , marker_pub_(this->create_publisher<visualization_msgs::msg::MarkerArray>("visualization_marker", 10))
   {
     position_marker_.ns = "position";
@@ -218,6 +221,26 @@ public:
     gimbal_msg_publisher_->publish(*msg);
   }
 
+  void publish_gimbal_feedback(const io::GimbalState & state, uint8_t mode, const Eigen::Quaterniond & q)
+  {
+    auto msg = std::make_shared<auto_aim_interfaces::msg::GimbalFeedback>();
+    msg->header.stamp = this->now();
+    msg->header.frame_id = "gimbal";
+    msg->mode = mode;
+    msg->q[0] = static_cast<float>(q.w());
+    msg->q[1] = static_cast<float>(q.x());
+    msg->q[2] = static_cast<float>(q.y());
+    msg->q[3] = static_cast<float>(q.z());
+    msg->yaw = state.yaw;
+    msg->yaw_vel = state.yaw_vel;
+    msg->pitch = state.pitch;
+    msg->pitch_vel = state.pitch_vel;
+    msg->bullet_speed = state.bullet_speed;
+    msg->bullet_count = state.bullet_count;
+    
+    gimbal_feedback_publisher_->publish(*msg);
+  }
+
   void publish_marker(
     bool tracking, const Eigen::Vector3d & position, const Eigen::Vector3d & velocity, 
     const Eigen::Vector3d & angular_velocity, const std::vector<Eigen::Vector3d> & armor_positions,
@@ -301,6 +324,7 @@ public:
   rclcpp::Publisher<auto_aim_interfaces::msg::Armors>::SharedPtr armor_msg_publisher_;
   rclcpp::Publisher<auto_aim_interfaces::msg::Target>::SharedPtr target_msg_publisher_;
   rclcpp::Publisher<auto_aim_interfaces::msg::Gimbal>::SharedPtr gimbal_msg_publisher_;
+  rclcpp::Publisher<auto_aim_interfaces::msg::GimbalFeedback>::SharedPtr gimbal_feedback_publisher_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_pub_;
 
   visualization_msgs::msg::Marker position_marker_;
@@ -414,11 +438,23 @@ int main(int argc, char * argv[])
   while (!exiter.exit()) {
     camera.read(img, t);
     auto q = gimbal.q(t);
+    auto gs = gimbal.state();
+    auto mode = gimbal.mode();
 
     solver.set_R_gimbal2world(q);
     
     Eigen::Vector3d t_camera2world = solver.R_gimbal2world().transpose() * Eigen::Vector3d(0.145, 0, 0.07);
     ros2_publisher->publish_tf(q, t_camera2world);
+    
+    // 发布云台反馈消息
+    uint8_t mode_value = 0;
+    switch (mode) {
+      case io::GimbalMode::IDLE: mode_value = 0; break;
+      case io::GimbalMode::AUTO_AIM: mode_value = 1; break;
+      case io::GimbalMode::SMALL_BUFF: mode_value = 2; break;
+      case io::GimbalMode::BIG_BUFF: mode_value = 3; break;
+    }
+    ros2_publisher->publish_gimbal_feedback(gs, mode_value, q);
     
     auto armors = yolo.detect(img);
     auto targets = tracker.track(armors, t);

@@ -65,28 +65,22 @@ int main(int argc, char * argv[])
       auto targets = targets_queue.front();
       auto gs = gimbal.state();
       
-      // 构造 aimer 需要的参数
-      auto timestamp = std::chrono::steady_clock::now();
-      auto aimer_command = aimer.aim(targets, timestamp, gs.bullet_speed);
-      
-      // 获取 plan
       auto target = targets.empty() ? std::nullopt : std::optional<auto_aim::Target>(targets.front());
       auto plan = planner.plan(target, gs.bullet_speed);
 
-      // 构造 Shooter 需要的参数
+      auto timestamp = std::chrono::steady_clock::now();
+      auto aimer_command = aimer.aim_with_plan(targets, plan, timestamp, gs.bullet_speed);
+
       io::Command command;
       command.control = plan.control;
       command.fire = plan.fire;
       command.yaw = plan.yaw;
       command.pitch = plan.pitch;
 
-      // 构造 gimbal_pos
       Eigen::Vector3d gimbal_pos(gs.yaw, gs.pitch, 0.0);
 
-      // 使用 Shooter 进行二次判断
       bool shooter_fire = shooter.shoot(command, aimer, targets, gimbal_pos);
 
-      // 最终开火判断
       bool final_fire = plan.fire && shooter_fire;
 
       {
