@@ -21,6 +21,7 @@
 #include "tools/math_tools.hpp"
 #include "tools/plotter.hpp"
 #include "tools/thread_safe_queue.hpp"
+#include "tools/trajectory.hpp"
 
 using namespace std::chrono_literals;
 
@@ -71,10 +72,38 @@ int main(int argc, char * argv[])
       auto timestamp = std::chrono::steady_clock::now();
       auto aimer_command = aimer.aim_with_plan(targets, plan, timestamp, gs.bullet_speed);
 
+      // 计算基于旋转中心的线性预测 yaw
+      double send_yaw = plan.yaw;
+      if (true) {
+        // 新方案：基于旋转中心的线性预测
+        double fly_time = 0.223;  // 默认飞行时间
+        if (target.has_value()) {
+          // 从 EKF 获取旋转中心位置和速度
+          double center_x = target->ekf_x()[0];
+          double center_y = target->ekf_x()[2];
+          double center_z = target->ekf_x()[4];
+          double ekf_yaw = target->ekf_x()[6];    // 旋转中心当前 yaw
+          double ekf_yaw_v = target->ekf_x()[7];  // 旋转中心角速度
+
+          // 计算距离并使用 tools 计算飞行时间
+          double dist = std::sqrt(center_x * center_x + center_y * center_y);
+          tools::Trajectory bullet_traj(gs.bullet_speed, dist, center_z);
+          if (!bullet_traj.unsolvable) {
+            fly_time = bullet_traj.fly_time;
+          }
+
+          // 线性预测：yaw + fly_time * yaw_v
+          send_yaw = tools::limit_rad(ekf_yaw + fly_time * ekf_yaw_v);
+        }
+      } else {
+        // 旧方案：使用 plan.yaw
+        send_yaw = plan.yaw;
+      }
+
       io::Command command;
       command.control = plan.control;
       command.fire = plan.fire;
-      command.yaw = plan.yaw;
+      command.yaw = send_yaw;  // 使用实际发送的 yaw
       command.pitch = plan.pitch;
 
       Eigen::Vector3d gimbal_pos(gs.yaw, gs.pitch, 0.0);
@@ -90,7 +119,7 @@ int main(int argc, char * argv[])
       }
 
       gimbal.send(
-        plan.control, final_fire, plan.yaw, plan.yaw_vel, plan.yaw_acc, plan.pitch, plan.pitch_vel,
+        plan.control, final_fire, send_yaw, plan.yaw_vel, plan.yaw_acc, plan.pitch, plan.pitch_vel,
         plan.pitch_acc);
 
       auto fired = gs.bullet_count > last_bullet_count;
