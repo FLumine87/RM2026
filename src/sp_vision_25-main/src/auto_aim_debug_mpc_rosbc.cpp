@@ -411,8 +411,7 @@ public:
   void publish_marker(
     bool tracking, const Eigen::Vector3d & position, const Eigen::Vector3d & velocity,
     const Eigen::Vector3d & angular_velocity, const std::vector<Eigen::Vector3d> & armor_positions,
-    const std::vector<double> & armor_yaws, const Eigen::Quaterniond & q_gimbal = Eigen::Quaterniond::Identity(),
-    bool show_trajectory = false)
+    const std::vector<double> & armor_yaws, const Eigen::Quaterniond & q_gimbal = Eigen::Quaterniond::Identity())
   {
     auto now = this->now();
     visualization_msgs::msg::MarkerArray marker_array;
@@ -482,10 +481,9 @@ public:
       angular_v_marker_.points.push_back(start_point);
       angular_v_marker_.points.push_back(end_point);
 
-      // 先发布轨迹marker（仅在show_trajectory为true时显示）
-      if (show_trajectory) {
-        publish_trajectory_marker(now, marker_array, q_gimbal);
-      }
+      // 先发布轨迹marker
+      publish_trajectory_marker(now, marker_array, q_gimbal);
+
 
       // 然后添加其他marker
       marker_array.markers.push_back(position_marker_);
@@ -518,10 +516,8 @@ public:
       armor_marker_.action = visualization_msgs::msg::Marker::DELETEALL;
       marker_array.markers.push_back(armor_marker_);
       
-      // 即使没有检测到装甲板，也在show_trajectory为true时发布弹道轨迹marker
-      if (show_trajectory) {
-        publish_trajectory_marker(now, marker_array, q_gimbal);
-      }
+      // 即使没有检测到装甲板，也发布弹道轨迹marker
+      publish_trajectory_marker(now, marker_array, q_gimbal);
     }
 
     marker_pub_->publish(marker_array);
@@ -839,9 +835,9 @@ int main(int argc, char * argv[])
         armor_yaws.push_back(xyza[3]);
       }
       
-      ros2_publisher->publish_marker(true, position, velocity, angular_velocity, armor_positions, armor_yaws, q, gs.show_trajectory);
+      ros2_publisher->publish_marker(true, position, velocity, angular_velocity, armor_positions, armor_yaws, q);
     } else {
-      ros2_publisher->publish_marker(false, Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(), {}, {}, q, gs.show_trajectory);
+      ros2_publisher->publish_marker(false, Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(), {}, {}, q);
     }
 
     /// 弹丸检测逻辑
