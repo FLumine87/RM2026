@@ -106,8 +106,10 @@ void capture_loop(
     tools::draw_text(img_with_ypr, fmt::format("roll_rad {:.4f}", ypr[2]), {40, 280}, {0, 0, 255});
 
     std::vector<cv::Point2f> centers_2d;
-    auto success = cv::findCirclesGrid(img, cv::Size(10, 7), centers_2d);  // 默认是对称圆点图案
-    cv::drawChessboardCorners(img_with_ypr, cv::Size(10, 7), centers_2d, success);  // 显示识别结果
+    // auto success = cv::findCirclesGrid(img, cv::Size(10, 7), centers_2d);  // 默认是对称圆点图案
+    // cv::drawChessboardCorners(img_with_ypr, cv::Size(10, 7), centers_2d, success);  // 显示识别结果
+    auto success = cv::findCirclesGrid(img, cv::Size(7, 7), centers_2d);  // 默认是对称圆点图案
+    cv::drawChessboardCorners(img_with_ypr, cv::Size(7, 7), centers_2d, success);  // 显示识别结果
     cv::resize(img_with_ypr, img_with_ypr, {}, 0.5, 0.5);  // 显示时缩小图片尺寸
 
     // 按“s”保存图片和对应四元数，按“q”退出程序
@@ -146,7 +148,7 @@ int main(int argc, char * argv[])
   // 新建输出文件夹
   std::filesystem::create_directory(output_folder);
 
-  tools::logger()->info("默认标定板尺寸为10列7行");
+  tools::logger()->info("默认标定板尺寸为7列7行");
   // 主循环，保存图片和对应四元数
   capture_loop(config_path, serial_port, baud, output_folder);
 

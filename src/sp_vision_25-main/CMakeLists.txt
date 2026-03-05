@@ -236,30 +236,30 @@ if(ament_cmake_FOUND AND rclcpp_FOUND AND std_msgs_FOUND AND geometry_msgs_FOUND
         message(WARNING "auto_aim_interfaces lib directory not found: ${AUTO_AIM_INTERFACES_LIB_DIR}")
     endif()
     
-# 添加 auto_aim_debug_mpc_bc 可执行文件
-    add_executable(auto_aim_debug_mpc_bc src/auto_aim_debug_mpc_bc.cpp)
-    
+# 添加 auto_aim_debug_mpc_rosbc 可执行文件
+    add_executable(auto_aim_debug_mpc_rosbc src/auto_aim_debug_mpc_rosbc.cpp)
+
     # 添加基本依赖
-    target_link_libraries(auto_aim_debug_mpc_bc ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim tools io bullet_detector)
-    
+    target_link_libraries(auto_aim_debug_mpc_rosbc ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim tools io bullet_detector)
+
     # 添加 ROS 依赖
-    ament_target_dependencies(auto_aim_debug_mpc_bc 
-        rclcpp 
-        std_msgs 
-        geometry_msgs 
-        sensor_msgs 
-        tf2_msgs 
+    ament_target_dependencies(auto_aim_debug_mpc_rosbc
+        rclcpp
+        std_msgs
+        geometry_msgs
+        sensor_msgs
+        tf2_msgs
         visualization_msgs
     )
-    
+
     # 直接链接类型支持库（如果存在）
     set(AUTO_AIM_INTERFACES_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../install/auto_aim_interfaces/lib")
     if(EXISTS "${AUTO_AIM_INTERFACES_LIB_DIR}")
         # 查找所有类型支持库文件
         file(GLOB AUTO_AIM_INTERFACES_LIBS "${AUTO_AIM_INTERFACES_LIB_DIR}/libauto_aim_interfaces__rosidl_typesupport_*.so")
         if(AUTO_AIM_INTERFACES_LIBS)
-            message(STATUS "Linking against auto_aim_interfaces typesupport libraries for auto_aim_debug_mpc_bc: ${AUTO_AIM_INTERFACES_LIBS}")
-            target_link_libraries(auto_aim_debug_mpc_bc ${AUTO_AIM_INTERFACES_LIBS})
+            message(STATUS "Linking against auto_aim_interfaces typesupport libraries for auto_aim_debug_mpc_rosbc: ${AUTO_AIM_INTERFACES_LIBS}")
+            target_link_libraries(auto_aim_debug_mpc_rosbc ${AUTO_AIM_INTERFACES_LIBS})
         else()
             message(WARNING "No auto_aim_interfaces typesupport libraries found in ${AUTO_AIM_INTERFACES_LIB_DIR}")
         endif()
@@ -302,7 +302,7 @@ else()
     # 即使条件不满足，也添加目标但不构建，这样至少可以看到目标存在
     add_custom_target(auto_aim_test_ros COMMENT "auto_aim_test_ros requires ROS2 dependencies")
     add_custom_target(auto_aim_debug_mpc_rosdebug COMMENT "auto_aim_debug_mpc_rosdebug requires ROS2 dependencies")
-    add_custom_target(auto_aim_debug_mpc_bc COMMENT "auto_aim_debug_mpc_bc requires ROS2 dependencies")
+    add_custom_target(auto_aim_debug_mpc_rosbc COMMENT "auto_aim_debug_mpc_rosbc requires ROS2 dependencies")
     add_custom_target(bullet_dectetor_rostest COMMENT "bullet_dectetor_rostest requires ROS2 dependencies")
 endif()
 

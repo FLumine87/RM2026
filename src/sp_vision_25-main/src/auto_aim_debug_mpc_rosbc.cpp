@@ -510,11 +510,11 @@ public:
       // 转换到世界坐标系：需要将相机坐标系转换为ROS世界坐标系
       // 相机坐标系：z向前，x向右，y向下
       // 世界坐标系：z向上，x向前，y向左
-      // 转换关系：world_x = cam_z, world_y = -cam_x, world_z = -cam_y
+      // 转换关系：world_x = cam_z, world_y = -cam_x, world_z = cam_y
       Eigen::Vector3d position_world;
       position_world.x() = position_cam.z();  // 相机z向前 -> 世界x向前
       position_world.y() = -position_cam.x(); // 相机x向右 -> 世界y向左（取负）
-      position_world.z() = -position_cam.y(); // 相机y向下 -> 世界z向上（取负）
+      position_world.z() = position_cam.y();  // 相机y向下 -> 世界z向上（正号，因为向下对应向上）
       
       // 应用云台姿态旋转
       position_world = R_cam_to_world * position_world;
@@ -641,14 +641,23 @@ int main(int argc, char * argv[])
     Eigen::Vector3d t_camera2world = solver.R_gimbal2world().transpose() * Eigen::Vector3d(0.145, 0, 0.07);
     ros2_publisher->publish_tf(q, t_camera2world);
     
+    auto t_yolo_start = std::chrono::steady_clock::now();
     auto armors = yolo.detect(img);
-    auto targets = tracker.track(armors, t);
-    auto command = aimer.aim(targets, t, 27, false);
+    auto t_yolo_end = std::chrono::steady_clock::now();
 
-    auto finish = std::chrono::steady_clock::now();
-    tools::logger()->info(
-      "[{}] yolo: {:.1f}ms, tracker: {:.1f}ms, aimer: {:.1f}ms", frame_count,
-      tools::delta_time(finish, t) * 1e3);
+    auto t_tracker_start = std::chrono::steady_clock::now();
+    auto targets = tracker.track(armors, t);
+    auto t_tracker_end = std::chrono::steady_clock::now();
+
+    auto t_aimer_start = std::chrono::steady_clock::now();
+    auto command = aimer.aim(targets, t, 27, false);
+    auto t_aimer_end = std::chrono::steady_clock::now();
+
+
+    
+      tools::delta_time(t_yolo_end, t_yolo_start) * 1e3,
+      tools::delta_time(t_tracker_end, t_tracker_start) * 1e3,
+      tools::delta_time(t_aimer_end, t_aimer_start) * 1e3;
 
     tools::draw_text(
       img,
@@ -755,24 +764,24 @@ int main(int argc, char * argv[])
     std::vector<std::tuple<aimer::aim::ImageBullet, int, double>> bullets_to_visualize;
     
     if (!detected_bullets.empty()) {
-      tools::logger()->info("[{}] Detected {} bullets", frame_count, detected_bullets.size());
-      
+      // tools::logger()->info("[{}] Detected {} bullets", frame_count, detected_bullets.size());
+
       for (const auto& bullet : detected_bullets) {
         double focal_length = converter.get_f_cv_mat_ref().at<double>(0, 0);
         double estimated_distance = (ACTUAL_BULLET_RADIUS * focal_length) / bullet.radius;
-        
+
         if (estimated_distance < MIN_BULLET_DISTANCE || estimated_distance > MAX_BULLET_DISTANCE) {
-          tools::logger()->info("[{}] Bullet distance {:.2f} out of range (filtered out)", frame_count, estimated_distance);
+          // tools::logger()->info("[{}] Bullet distance {:.2f} out of range (filtered out)", frame_count, estimated_distance);
           continue;
         }
-        
-        if (bullet.center.x >= 0 && bullet.center.y >= 0 && 
+
+        if (bullet.center.x >= 0 && bullet.center.y >= 0 &&
             bullet.center.x < img.cols && bullet.center.y < img.rows) {
           cv::Vec3b pixel = img.at<cv::Vec3b>(bullet.center);
           double brightness = pixel[2];
-          
+
           if (brightness < BULLET_BRIGHTNESS_THRESHOLD) {
-            tools::logger()->info("[{}] Bullet brightness {:.2f} too low (filtered out)", frame_count, brightness);
+            // tools::logger()->info("[{}] Bullet brightness {:.2f} too low (filtered out)", frame_count, brightness);
             continue;
           }
         }
@@ -808,20 +817,20 @@ int main(int argc, char * argv[])
             
             if (speed_valid || history.consecutive_detections < 3) {
               filtered_bullets.push_back(bullet);
-              if (speed_valid) {
-                tools::logger()->info("[{}] Bullet {} speed: {:.2f} m/s, distance: {:.2f} m, cost: {:.2f} (filtered in)", frame_count, matched_bullet_id, speed, estimated_distance, history.trajectory_cost);
-              } else {
-                tools::logger()->info("[{}] Bullet {} speed: {:.2f} m/s (allowed for new bullet)", frame_count, matched_bullet_id, speed);
-              }
-              
+              // if (speed_valid) {
+              //   tools::logger()->info("[{}] Bullet {} speed: {:.2f} m/s, distance: {:.2f} m, cost: {:.2f} (filtered in)", frame_count, matched_bullet_id, speed, estimated_distance, history.trajectory_cost);
+              // } else {
+              //   tools::logger()->info("[{}] Bullet {} speed: {:.2f} m/s (allowed for new bullet)", frame_count, matched_bullet_id, speed);
+              // }
+
               bullets_to_visualize.emplace_back(bullet, matched_bullet_id, speed);
             } else {
-              tools::logger()->info("[{}] Bullet {} speed: {:.2f} m/s (filtered out)", frame_count, matched_bullet_id, speed);
+              // tools::logger()->info("[{}] Bullet {} speed: {:.2f} m/s (filtered out)", frame_count, matched_bullet_id, speed);
             }
           } else {
             filtered_bullets.push_back(bullet);
-            tools::logger()->info("[{}] Bullet {} time diff {:.3f}s (filtered in)", frame_count, matched_bullet_id, time_diff);
-            
+            // tools::logger()->info("[{}] Bullet {} time diff {:.3f}s (filtered in)", frame_count, matched_bullet_id, time_diff);
+
             bullets_to_visualize.emplace_back(bullet, matched_bullet_id, 0.0);
           }
           
@@ -836,9 +845,9 @@ int main(int argc, char * argv[])
           
           bullet_histories[new_bullet_id] = new_history;
           filtered_bullets.push_back(bullet);
-          
-          tools::logger()->info("[{}] New bullet {} detected, distance: {:.2f} m, cost: {:.2f}", frame_count, new_bullet_id, estimated_distance, new_history.trajectory_cost);
-          
+
+          // tools::logger()->info("[{}] New bullet {} detected, distance: {:.2f} m, cost: {:.2f}", frame_count, new_bullet_id, estimated_distance, new_history.trajectory_cost);
+
           bullets_to_visualize.emplace_back(bullet, new_bullet_id, new_history.estimated_speed);
         }
       }
@@ -860,7 +869,7 @@ int main(int argc, char * argv[])
         }
         
         for (int id : to_remove) {
-          tools::logger()->info("[{}] Removing high cost bullet {} (cost: {:.2f})\n", frame_count, id, bullet_histories[id].trajectory_cost);
+          // tools::logger()->info("[{}] Removing high cost bullet {} (cost: {:.2f})\n", frame_count, id, bullet_histories[id].trajectory_cost);
           bullet_histories.erase(id);
         }
       }
@@ -899,7 +908,7 @@ int main(int argc, char * argv[])
       data["original_bullet_count"] = detected_bullets.size();
       data["remaining_bullet_count"] = bullet_histories.size();
     } else {
-      tools::logger()->info("[{}] No bullets detected", frame_count);
+      // tools::logger()->info("[{}] No bullets detected", frame_count);
       data["bullet_detected"] = false;
       data["bullet_count"] = 0;
       data["original_bullet_count"] = 0;
@@ -913,7 +922,7 @@ int main(int argc, char * argv[])
       }
     }
     for (int id : to_remove) {
-      tools::logger()->info("[{}] Removing expired bullet {}", frame_count, id);
+      // tools::logger()->info("[{}] Removing expired bullet {}", frame_count, id);
       bullet_histories.erase(id);
     }
 
