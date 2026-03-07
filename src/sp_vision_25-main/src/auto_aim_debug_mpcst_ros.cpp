@@ -17,7 +17,9 @@
 #include "sensor_msgs/msg/image.hpp"
 #include "std_msgs/msg/header.hpp"
 #include "std_msgs/msg/string.hpp"
+#include "tasks/auto_aim/aimer.hpp"
 #include "tasks/auto_aim/planner/planner.hpp"
+#include "tasks/auto_aim/shooter.hpp"
 #include "tasks/auto_aim/solver.hpp"
 #include "tasks/auto_aim/tracker.hpp"
 #include "tasks/auto_aim/yolo.hpp"
@@ -28,6 +30,7 @@
 #include "tools/math_tools.hpp"
 #include "tools/plotter.hpp"
 #include "tools/thread_safe_queue.hpp"
+#include "tools/trajectory.hpp"
 #include "visualization_msgs/msg/marker.hpp"
 #include "visualization_msgs/msg/marker_array.hpp"
 
@@ -361,12 +364,14 @@ int main(int argc, char * argv[])
   auto_aim::Solver solver(config_path);
   auto_aim::Tracker tracker(config_path, solver);
   auto_aim::Planner planner(config_path);
+  auto_aim::Aimer aimer(config_path);
+  auto_aim::Shooter shooter(config_path);
 
   std::mutex plan_mutex;
   auto_aim::Plan latest_plan = {};
 
-  tools::ThreadSafeQueue<std::optional<auto_aim::Target>, true> target_queue(1);
-  target_queue.push(std::nullopt);
+  tools::ThreadSafeQueue<std::list<auto_aim::Target>, true> targets_queue(1);
+  targets_queue.push({});
 
   std::atomic<bool> quit = false;
   std::thread ros2_spin_thread([&]() { rclcpp::spin(ros2_publisher); });
@@ -376,17 +381,63 @@ int main(int argc, char * argv[])
     uint16_t last_bullet_count = 0;
 
     while (!quit) {
-      auto target = target_queue.front();
+      auto targets = targets_queue.front();
       auto gs = gimbal.state();
+      
+      auto target = targets.empty() ? std::nullopt : std::optional<auto_aim::Target>(targets.front());
       auto plan = planner.plan(target, gs.bullet_speed);
+
+      auto timestamp = std::chrono::steady_clock::now();
+      auto aimer_command = aimer.aim_with_plan(targets, plan, timestamp, gs.bullet_speed);
+
+      // 计算基于旋转中心的线性预测 yaw
+      double send_yaw = plan.yaw;
+      if (true) {
+        // 新方案：基于旋转中心的线性预测
+        double fly_time = 0.223;  // 默认飞行时间
+        if (target.has_value()) {
+          // 从 EKF 获取旋转中心位置和速度
+          double center_x = target->ekf_x()[0];
+          double center_y = target->ekf_x()[2];
+          double center_z = target->ekf_x()[4];
+          double ekf_yaw = target->ekf_x()[6];    // 旋转中心当前 yaw
+          double ekf_yaw_v = target->ekf_x()[7];  // 旋转中心角速度
+
+          // 计算距离并使用 tools 计算飞行时间
+          double dist = std::sqrt(center_x * center_x + center_y * center_y);
+          tools::Trajectory bullet_traj(gs.bullet_speed, dist, center_z);
+          if (!bullet_traj.unsolvable) {
+            fly_time = bullet_traj.fly_time;
+          }
+
+          // 线性预测：yaw + fly_time * yaw_v
+          send_yaw = tools::limit_rad(ekf_yaw + fly_time * ekf_yaw_v);
+        }
+      } else {
+        // 旧方案：使用 plan.yaw
+        send_yaw = plan.yaw;
+      }
+
+      io::Command command;
+      command.control = plan.control;
+      command.shoot = plan.fire;
+      command.yaw = send_yaw;  // 使用实际发送的 yaw
+      command.pitch = plan.pitch;
+
+      Eigen::Vector3d gimbal_pos(gs.yaw, gs.pitch, 0.0);
+
+      bool shooter_fire = shooter.shoot(command, aimer, targets, gimbal_pos);
+
+      bool final_fire = plan.fire && shooter_fire;
 
       {
         std::lock_guard<std::mutex> lock(plan_mutex);
         latest_plan = plan;
+        latest_plan.fire = final_fire;
       }
 
       gimbal.send(
-        plan.control, plan.fire, plan.yaw, plan.yaw_vel, plan.yaw_acc, plan.pitch, plan.pitch_vel,
+        plan.control, final_fire, send_yaw, plan.yaw_vel, plan.yaw_acc, plan.pitch, plan.pitch_vel,
         plan.pitch_acc);
 
       auto fired = gs.bullet_count > last_bullet_count;
@@ -411,12 +462,12 @@ int main(int argc, char * argv[])
       data["plan_pitch_vel"] = plan.pitch_vel;
       data["plan_pitch_acc"] = plan.pitch_acc;
 
-      data["fire"] = plan.fire ? 1 : 0;
+      data["fire"] = final_fire ? 1 : 0;
       data["fired"] = fired ? 1 : 0;
 
       if (target.has_value()) {
-        data["target_z"] = target->ekf_x()[4];
-        data["target_vz"] = target->ekf_x()[5];
+        data["target_z"] = target->ekf_x()[4];   //z
+        data["target_vz"] = target->ekf_x()[5];  //vz
       }
 
       if (target.has_value()) {
@@ -437,9 +488,6 @@ int main(int argc, char * argv[])
 
   while (!exiter.exit()) {
     camera.read(img, t);
-    
-    // 图像旋转180度（如果相机安装方向颠倒）
-    cv::rotate(img, img, cv::ROTATE_180);
     auto q = gimbal.q(t);
     auto gs = gimbal.state();
     auto mode = gimbal.mode();
@@ -461,14 +509,12 @@ int main(int argc, char * argv[])
     
     auto armors = yolo.detect(img);
     auto targets = tracker.track(armors, t);
-    if (!targets.empty())
-      target_queue.push(targets.front());
-    else
-      target_queue.push(std::nullopt);
+    targets_queue.push(targets);
 
     if (!targets.empty()) {
       auto target = targets.front();
 
+      // 当前帧target更新后
       std::vector<Eigen::Vector4d> armor_xyza_list = target.armor_xyza_list();
       for (const Eigen::Vector4d & xyza : armor_xyza_list) {
         auto image_points =
@@ -533,6 +579,3 @@ int main(int argc, char * argv[])
 
   return 0;
 }
-
-// ls -la /dev/shm/fastrtps*
-// sudo rm -f /dev/shm/fastrtps*

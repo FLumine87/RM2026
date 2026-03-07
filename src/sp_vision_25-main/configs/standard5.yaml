@@ -87,7 +87,7 @@ pitch_kp: 0
 pitch_kd: 0
 
 #####-----planner-----#####
-firefire_thresh: 0.0035
+fire_thresh: 0.0035
 
 max_yaw_acc: 50
 Q_yaw: [9e6, 0]

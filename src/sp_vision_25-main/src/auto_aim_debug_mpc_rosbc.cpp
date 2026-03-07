@@ -1021,6 +1021,8 @@ int main(int argc, char * argv[])
       auto text = fmt::format(
         "yaw: {:.2f} pitch: {:.2f} fire: {}", latest_plan.yaw, latest_plan.pitch, latest_plan.fire);
       cv::putText(img, text, {10, 30}, cv::FONT_HERSHEY_SIMPLEX, 1.0, {0, 255, 0}, 2);
+      // 发布云台控制消息
+      ros2_publisher->publish_gimbal_msg(latest_plan);
     }
 
     auto delay_text = fmt::format(
