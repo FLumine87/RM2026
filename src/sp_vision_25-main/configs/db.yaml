@@ -39,21 +39,21 @@ outpost_max_temp_lost_count: 75
 
 #####-----aimer参数-----#####
 yaw_offset: -2 # degree -2.5
-pitch_offset: 0 # degree 2
+pitch_offset: -0.3 # degree 2
 comming_angle: 60 # degree
 leaving_angle: 20 # degree
 decision_speed: 8 # rad/s
-high_speed_delay_time: 0.015 # s
+high_speed_delay_time: 0.025 # s
 low_speed_delay_time: 0.015 # s
 
 #####-----shooter参数-----#####
 first_tolerance: 3 # 近距离射击容差，degree
-second_tolerance: 2 # 远距离射击容差，degree
+second_tolerance: 1.5 # 远距离射击容差，degree
 judge_distance: 2 #距离判断阈值
 auto_fire: true # 是否由自瞄控制射击
 
 camera_name: "hikrobot"
-exposure_ms: 6.2
+exposure_ms: 1
 gain: 17
 vid_pid: "2bdf:0001"
 
@@ -71,7 +71,7 @@ R_gimbal2imubody: [0, 1, 0, -1, 0, 0, 0, 0, 1]
 # camera_matrix: [1772.950831291552, 0, 729.61979869723393, 0, 1772.1846780551402, 520.24634648987751, 0, 0, 1]
 # distort_coeffs: [-0.06094747804015388, 0.095382434159573606, -0.00050961560953343983, 0.000122850992892626, 0]
 
-# 重投影误差: 0.0479px duobu 12mm
+# 重投影误差: 0.0479px duobo 12mm
 camera_matrix: [3640.0307247132732, 0, 733.50105164161846, 0, 3636.5137088762144, 616.999577651545, 0, 0, 1]
 distort_coeffs: [-0.14820436180762939, -0.19281101979957613, 0.00092208707422357622, 0.0018606322883594991, 0]
 

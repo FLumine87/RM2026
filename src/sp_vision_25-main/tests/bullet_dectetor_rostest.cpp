@@ -448,6 +448,15 @@ public:
     target_msg_publisher_->publish(*msg);
   }
 
+  void publish_empty_target_msg()
+  {
+    auto msg = std::make_shared<auto_aim_interfaces::msg::Target>();
+    msg->header.stamp = this->now();
+    msg->header.frame_id = "world";
+    msg->tracking = false;
+    target_msg_publisher_->publish(*msg);
+  }
+
   // 弹道轨迹marker
   visualization_msgs::msg::Marker trajectory_marker_;
 
@@ -900,6 +909,8 @@ int main(int argc, char * argv[])
     } else {
       // 发布空标记
       ros2_publisher->publish_marker(false, Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(), {}, {}, Eigen::Quaterniond::Identity());
+      ros2_publisher->publish_armor_msg({});
+      ros2_publisher->publish_empty_target_msg();
     }
 
   /// 弹丸检测

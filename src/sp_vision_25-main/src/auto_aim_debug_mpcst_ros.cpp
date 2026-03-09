@@ -207,6 +207,15 @@ public:
     target_msg_publisher_->publish(*msg);
   }
 
+  void publish_empty_target_msg()
+  {
+    auto msg = std::make_shared<auto_aim_interfaces::msg::Target>();
+    msg->header.stamp = this->now();
+    msg->header.frame_id = "world";
+    msg->tracking = false;
+    target_msg_publisher_->publish(*msg);
+  }
+
   void publish_gimbal_msg(const auto_aim::Plan & plan)
   {
     auto msg = std::make_shared<auto_aim_interfaces::msg::Gimbal>();
@@ -392,7 +401,7 @@ int main(int argc, char * argv[])
 
       // 计算基于旋转中心的线性预测 yaw
       double send_yaw = plan.yaw;
-      if (true) {
+      if (false) {
         // 新方案：基于旋转中心的线性预测
         double fly_time = 0.223;  // 默认飞行时间
         if (target.has_value()) {
@@ -400,8 +409,8 @@ int main(int argc, char * argv[])
           double center_x = target->ekf_x()[0];
           double center_y = target->ekf_x()[2];
           double center_z = target->ekf_x()[4];
-          double ekf_yaw = target->ekf_x()[6];    // 旋转中心当前 yaw
-          double ekf_yaw_v = target->ekf_x()[7];  // 旋转中心角速度
+          double vx = target->ekf_x()[1];
+          double vy = target->ekf_x()[3];
 
           // 计算距离并使用 tools 计算飞行时间
           double dist = std::sqrt(center_x * center_x + center_y * center_y);
@@ -410,8 +419,18 @@ int main(int argc, char * argv[])
             fly_time = bullet_traj.fly_time;
           }
 
-          // 线性预测：yaw + fly_time * yaw_v
-          send_yaw = tools::limit_rad(ekf_yaw + fly_time * ekf_yaw_v);
+          // 线性预测：基于旋转中心平移的yaw预测
+          
+          // 对目标进行预测，预测时间为fly_time
+          auto future_target = *target;
+          future_target.predict(fly_time);
+          
+          // 从预测后的目标状态中获取旋转中心的位置
+          double future_center_x = future_target.ekf_x()[0];
+          double future_center_y = future_target.ekf_x()[2];
+          
+          // 计算到预测后的旋转中心位置的yaw角度
+          send_yaw = tools::limit_rad(std::atan2(future_center_y, future_center_x));
         }
       } else {
         // 旧方案：使用 plan.yaw
@@ -430,10 +449,19 @@ int main(int argc, char * argv[])
 
       bool final_fire = plan.fire && shooter_fire;
 
+      // // 如果ekf预测出来的目标的yaw是往右走的，火控位设为false
+      // if (target.has_value()) {
+      //   double v_yaw = target->ekf_x()[7];  // 获取目标的yaw速度
+      //   if (v_yaw > 0) {  // yaw速度为正表示向右走
+      //     final_fire = false;
+      //   }
+      // }
+
       {
         std::lock_guard<std::mutex> lock(plan_mutex);
         latest_plan = plan;
         latest_plan.fire = final_fire;
+        latest_plan.yaw = send_yaw;  // 使用实际发送的 yaw
       }
 
       gimbal.send(
@@ -488,6 +516,10 @@ int main(int argc, char * argv[])
 
   while (!exiter.exit()) {
     camera.read(img, t);
+
+    // 图像旋转180度（如果相机安装方向颠倒）
+    cv::rotate(img, img, cv::ROTATE_180);
+    
     auto q = gimbal.q(t);
     auto gs = gimbal.state();
     auto mode = gimbal.mode();
@@ -548,6 +580,8 @@ int main(int argc, char * argv[])
       ros2_publisher->publish_marker(true, position, velocity, angular_velocity, armor_positions, armor_yaws);
     } else {
       ros2_publisher->publish_marker(false, Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(), {}, {});
+      ros2_publisher->publish_armor_msg({});
+      ros2_publisher->publish_empty_target_msg();
     }
 
     {

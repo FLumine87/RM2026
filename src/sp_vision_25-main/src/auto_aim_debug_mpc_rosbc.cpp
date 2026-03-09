@@ -371,6 +371,15 @@ public:
     target_msg_publisher_->publish(*msg);
   }
 
+  void publish_empty_target_msg()
+  {
+    auto msg = std::make_shared<auto_aim_interfaces::msg::Target>();
+    msg->header.stamp = this->now();
+    msg->header.frame_id = "world";
+    msg->tracking = false;
+    target_msg_publisher_->publish(*msg);
+  }
+
   void publish_gimbal_msg(const auto_aim::Plan & plan)
   {
     auto msg = std::make_shared<auto_aim_interfaces::msg::Gimbal>();
@@ -838,6 +847,8 @@ int main(int argc, char * argv[])
       ros2_publisher->publish_marker(true, position, velocity, angular_velocity, armor_positions, armor_yaws, q);
     } else {
       ros2_publisher->publish_marker(false, Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(), {}, {}, q);
+      ros2_publisher->publish_armor_msg({});
+      ros2_publisher->publish_empty_target_msg();
     }
 
     /// 弹丸检测逻辑

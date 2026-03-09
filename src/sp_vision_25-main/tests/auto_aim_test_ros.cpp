@@ -192,6 +192,15 @@ public:
     target_msg_publisher_->publish(*msg);
   }
 
+  void publish_empty_target_msg()
+  {
+    auto msg = std::make_shared<auto_aim_interfaces::msg::Target>();
+    msg->header.stamp = this->now();
+    msg->header.frame_id = "world";
+    msg->tracking = false;
+    target_msg_publisher_->publish(*msg);
+  }
+
   void publish_gimbal_msg(const io::Command & command)
   {
     auto msg = std::make_shared<auto_aim_interfaces::msg::Gimbal>();
@@ -508,6 +517,8 @@ int main(int argc, char * argv[])
     } else {
       // 发布空标记
       ros2_publisher->publish_marker(false, Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(), {}, {});
+      ros2_publisher->publish_armor_msg({});
+      ros2_publisher->publish_empty_target_msg();
     }
 
     plotter.plot(data);
