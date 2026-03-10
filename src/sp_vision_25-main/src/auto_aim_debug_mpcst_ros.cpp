@@ -421,14 +421,15 @@ int main(int argc, char * argv[])
 
           // 计算额外延迟：云台延迟
           // 从目标的ekf状态中获取角速度 (ekf_x()[7] 是角速度)
-          double angular_velocity = target->ekf_x()[7];
+          // double angular_velocity = target->ekf_x()[7];
           // 从配置中获取决策速度和延迟时间
-          double decision_speed = 8.0;  // 与配置文件中的decision_speed对应
-          double high_speed_delay = 0.025;  // 与配置文件中的high_speed_delay_time对应
-          double low_speed_delay = 0.015;   // 与配置文件中的low_speed_delay_time对应
+          // double decision_speed = 8.0;  // 与配置文件中的decision_speed对应
+          // double high_speed_delay = 0.025;  // 与配置文件中的high_speed_delay_time对应
+          // double low_speed_delay = 0.015;   // 与配置文件中的low_speed_delay_time对应
           
           // 根据角速度选择合适的延迟时间
-          double delay_time = std::abs(angular_velocity) > decision_speed ? high_speed_delay : low_speed_delay;
+          // double delay_time = std::abs(angular_velocity) > decision_speed ? high_speed_delay : low_speed_delay;
+          double delay_time =0.1
           // 线性预测：基于旋转中心平移的yaw预测
           
           // 对目标进行预测，预测时间为总延迟
