@@ -19,19 +19,20 @@ Planner::Planner(const std::string & config_path)
   decision_speed_ = tools::read<double>(yaml, "decision_speed");
   high_speed_delay_time_ = tools::read<double>(yaml, "high_speed_delay_time");
   low_speed_delay_time_ = tools::read<double>(yaml, "low_speed_delay_time");
+  fire_delay_time_ = tools::read<double>(yaml, "fire_delay_time", 0.02);
 
   setup_yaw_solver(config_path);
   setup_pitch_solver(config_path);
 }
 
-Plan Planner::plan(Target target, double bullet_speed)
+Plan Planner::plan(Target target, double bullet_speed, const io::GimbalState & gimbal_state)
 {
   // 0. Check bullet speed
   if (bullet_speed < 10 || bullet_speed > 25) {
     bullet_speed = 22;
   }
 
-  // 1. Predict fly_time
+  // 1. Predict fly_time and fire_delay
   Eigen::Vector3d xyz;
   auto min_dist = 1e10;
   for (auto & xyza : target.armor_xyza_list()) {
@@ -42,7 +43,7 @@ Plan Planner::plan(Target target, double bullet_speed)
     }
   }
   auto bullet_traj = tools::Trajectory(bullet_speed, min_dist, xyz.z());
-  target.predict(bullet_traj.fly_time);
+  target.predict(fire_delay_time_ + bullet_traj.fly_time);
 
   // 2. Get trajectory
   double yaw0;
@@ -55,17 +56,18 @@ Plan Planner::plan(Target target, double bullet_speed)
     return {false};
   }
 
-  // 3. Solve yaw
-  Eigen::VectorXd x0(2);
-  x0 << traj(0, 0), traj(1, 0);
-  tiny_set_x0(yaw_solver_, x0);
+  // 3. Solve yaw - 使用实际云台状态作为初始状态
+  Eigen::VectorXd x0_yaw(2);
+  x0_yaw << gimbal_state.yaw - yaw0, gimbal_state.yaw_vel;
+  tiny_set_x0(yaw_solver_, x0_yaw);
 
   yaw_solver_->work->Xref = traj.block(0, 0, 2, HORIZON);
   tiny_solve(yaw_solver_);
 
-  // 4. Solve pitch
-  x0 << traj(2, 0), traj(3, 0);
-  tiny_set_x0(pitch_solver_, x0);
+  // 4. Solve pitch - 使用实际云台状态作为初始状态
+  Eigen::VectorXd x0_pitch(2);
+  x0_pitch << gimbal_state.pitch, gimbal_state.pitch_vel;
+  tiny_set_x0(pitch_solver_, x0_pitch);
 
   pitch_solver_->work->Xref = traj.block(2, 0, 2, HORIZON);
   tiny_solve(pitch_solver_);
@@ -93,7 +95,7 @@ Plan Planner::plan(Target target, double bullet_speed)
   return plan;
 }
 
-Plan Planner::plan(std::optional<Target> target, double bullet_speed)
+Plan Planner::plan(std::optional<Target> target, double bullet_speed, const io::GimbalState & gimbal_state)
 {
   if (!target.has_value()) return {false};
 
@@ -104,7 +106,7 @@ Plan Planner::plan(std::optional<Target> target, double bullet_speed)
 
   target->predict(future);
 
-  return plan(*target, bullet_speed);
+  return plan(*target, bullet_speed, gimbal_state);
 }
 
 void Planner::setup_yaw_solver(const std::string & config_path)

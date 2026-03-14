@@ -24,8 +24,24 @@ Target::Target() : first_in_(true), unsolvable_(true) {};
 Eigen::Vector3d Target::point_buff2world(const Eigen::Vector3d & point_in_buff) const
 {
   if (unsolvable_) return Eigen::Vector3d(0, 0, 0);
-  Eigen::Matrix3d R_buff2world =
-    tools::rotation_matrix(Eigen::Vector3d(ekf_.x[4], 0.0, ekf_.x[5]));  // pitch = 0
+  
+  // 使用与 auto_aim 一致的旋转矩阵
+  double yaw = ekf_.x[4];
+  double row = ekf_.x[5];
+  
+  auto cos_yaw = std::cos(yaw);
+  auto sin_yaw = std::sin(yaw);
+  double pitch = 0.0;
+  auto sin_pitch = std::sin(pitch);
+  auto cos_pitch = std::cos(pitch);
+  
+  // clang-format off
+  Eigen::Matrix3d R_buff2world {
+    {cos_yaw * cos_pitch, -sin_yaw, cos_yaw * sin_pitch},
+    {sin_yaw * cos_pitch,  cos_yaw, sin_yaw * sin_pitch},
+    {         -sin_pitch,        0,           cos_pitch}
+  };
+  // clang-format on
 
   auto R_yaw = ekf_.x[0];
   auto R_pitch = ekf_.x[2];

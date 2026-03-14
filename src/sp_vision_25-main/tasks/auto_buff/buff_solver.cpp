@@ -121,14 +121,26 @@ cv::Point2f Solver::point_buff2pixel(cv::Point3f x)
 }
 
 // xyz_in_world2xyz_in_pix
-std::vector<cv::Point2f> Solver::reproject_buff(
-  const Eigen::Vector3d & xyz_in_world, double yaw, double row) const
+std::vector&lt;cv::Point2f&gt; Solver::reproject_buff(
+  const Eigen::Vector3d &amp; xyz_in_world, double yaw, double row) const
 {
-  auto R_buff2world = tools::rotation_matrix(Eigen::Vector3d(yaw, 0.0, row));
+  // 使用与 auto_aim 一致的旋转矩阵
+  auto cos_yaw = std::cos(yaw);
+  auto sin_yaw = std::sin(yaw);
+  auto pitch = 0.0;
+  auto sin_pitch = std::sin(pitch);
+  auto cos_pitch = std::cos(pitch);
+  
+  // clang-format off
+  const Eigen::Matrix3d R_buff2world {
+    {cos_yaw * cos_pitch, -sin_yaw, cos_yaw * sin_pitch},
+    {sin_yaw * cos_pitch,  cos_yaw, sin_yaw * sin_pitch},
+    {         -sin_pitch,        0,           cos_pitch}
+  };
   // clang-format on
 
   // get R_buff2camera t_buff2camera
-  const Eigen::Vector3d & t_buff2world = xyz_in_world;
+  const Eigen::Vector3d &amp; t_buff2world = xyz_in_world;
   Eigen::Matrix3d R_buff2camera =
     R_camera2gimbal_.transpose() * R_gimbal2world_.transpose() * R_buff2world;
   Eigen::Vector3d t_buff2camera =
