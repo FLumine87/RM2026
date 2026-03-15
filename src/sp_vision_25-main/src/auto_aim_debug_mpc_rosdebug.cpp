@@ -439,7 +439,7 @@ int main(int argc, char * argv[])
     while (!quit) {
       auto target = target_queue.front();
       auto gs = gimbal.state();
-      auto plan = planner.plan(target, gs.bullet_speed, gs);
+      auto plan = planner.plan(target, gs.bullet_speed);
 
       {
         std::lock_guard<std::mutex> lock(plan_mutex);

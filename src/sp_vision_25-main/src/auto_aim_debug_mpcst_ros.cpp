@@ -394,23 +394,7 @@ int main(int argc, char * argv[])
       auto gs = gimbal.state();
       
       auto target = targets.empty() ? std::nullopt : std::optional<auto_aim::Target>(targets.front());
-      auto plan = planner.plan(target, gs.bullet_speed, gs);
-      
-      // 为yaw单独创建一个使用100ms延迟的计划
-      if (target.has_value()) {
-        // 创建目标的副本
-        auto yaw_target = *target;
-        // 计算100ms后的时间点
-        auto yaw_future = std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
-        // 预测目标到100ms后
-        yaw_target.predict(yaw_future);
-        // 为yaw创建一个单独的计划
-        auto yaw_plan = planner.plan(yaw_target, gs.bullet_speed, gs);
-        // 只替换plan中的yaw相关值，保留其他值不变
-        plan.yaw = yaw_plan.yaw;
-        plan.yaw_vel = yaw_plan.yaw_vel;
-        plan.yaw_acc = yaw_plan.yaw_acc;
-      }
+      auto plan = planner.plan(target, gs.bullet_speed);
 
       auto timestamp = std::chrono::steady_clock::now();
       auto aimer_command = aimer.aim_with_plan(targets, plan, timestamp, gs.bullet_speed);
@@ -464,25 +448,25 @@ int main(int argc, char * argv[])
         send_yaw = plan.yaw;
       }
 
-      Eigen::Vector3d gimbal_pos(gs.yaw, gs.pitch, 0.0);
-
       io::Command command;
       command.control = plan.control;
       command.shoot = plan.fire;
       command.yaw = send_yaw;  // 使用实际发送的 yaw
       command.pitch = plan.pitch;
 
+      Eigen::Vector3d gimbal_pos(gs.yaw, gs.pitch, 0.0);
+
       bool shooter_fire = shooter.shoot(command, aimer, targets, gimbal_pos);
 
       bool final_fire = plan.fire && shooter_fire;
 
-      // 如果ekf预测出来的目标的yaw是往右走的，火控位设为false
-      if (target.has_value()) {
-        double v_yaw = target->ekf_x()[7];  // 获取目标的yaw速度
-        if (v_yaw < 0) {  // yaw速度为正表示向右走
-          final_fire = false;
-        }
-      }
+      // // 如果ekf预测出来的目标的yaw是往右走的，火控位设为false
+      // if (target.has_value()) {
+      //   double v_yaw = target->ekf_x()[7];  // 获取目标的yaw速度
+      //   if (v_yaw > 0) {  // yaw速度为正表示向右走
+      //     final_fire = false;
+      //   }
+      // }
 
       {
         std::lock_guard<std::mutex> lock(plan_mutex);

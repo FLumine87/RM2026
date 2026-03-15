@@ -67,7 +67,7 @@ int main(int argc, char * argv[])
       auto gs = gimbal.state();
       
       auto target = targets.empty() ? std::nullopt : std::optional<auto_aim::Target>(targets.front());
-      auto plan = planner.plan(target, gs.bullet_speed, gs);
+      auto plan = planner.plan(target, gs.bullet_speed);
 
       auto timestamp = std::chrono::steady_clock::now();
       auto aimer_command = aimer.aim_with_plan(targets, plan, timestamp, gs.bullet_speed);

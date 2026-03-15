@@ -5,7 +5,6 @@
 #include <list>
 #include <optional>
 
-#include "io/gimbal/gimbal.hpp"
 #include "tasks/auto_aim/target.hpp"
 #include "tinympc/tiny_api.hpp"
 
@@ -37,15 +36,14 @@ public:
   Eigen::Vector4d debug_xyza;
   Planner(const std::string & config_path);
 
-  Plan plan(Target target, double bullet_speed, const GimbalState & gimbal_state);
-  Plan plan(std::optional<Target> target, double bullet_speed, const GimbalState & gimbal_state);
+  Plan plan(Target target, double bullet_speed);
+  Plan plan(std::optional<Target> target, double bullet_speed);
 
 private:
   double yaw_offset_;
   double pitch_offset_;
   double fire_thresh_;
   double low_speed_delay_time_, high_speed_delay_time_, decision_speed_;
-  double fire_delay_time_;
 
   TinySolver * yaw_solver_;
   TinySolver * pitch_solver_;

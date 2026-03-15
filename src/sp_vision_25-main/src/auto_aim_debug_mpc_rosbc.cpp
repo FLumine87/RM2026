@@ -724,7 +724,7 @@ int main(int argc, char * argv[])
         target_list.push_back(target.value());
       }
       
-      auto plan = planner.plan(target, gs.bullet_speed, gs);
+      auto plan = planner.plan(target, gs.bullet_speed);
 
       {
         std::lock_guard<std::mutex> lock(plan_mutex);
