@@ -790,8 +790,17 @@ int main(int argc, char * argv[])
 
     solver.set_R_gimbal2world(q);
     
-    Eigen::Vector3d t_camera2world = solver.R_gimbal2world().transpose() * Eigen::Vector3d(0.145, 0, 0.07);
-    ros2_publisher->publish_tf(q, t_camera2world);
+    // Eigen::Vector3d t_camera2world = solver.R_gimbal2world().transpose() * Eigen::Vector3d(0.145, 0, 0.07);
+    // ros2_publisher->publish_tf(q, t_camera2world);
+    // 使用 R_gimbal2imubody 矩阵: [0, 1, 0, -1, 0, 0, 0, 0, 1]
+    // 转换为四元数，共原点（平移为零）
+    Eigen::Matrix3d R_gimbal2imubody;
+    R_gimbal2imubody << 0, 1, 0,
+                       -1, 0, 0,
+                        0, 0, 1;
+    Eigen::Quaterniond q_gimbal2imubody(R_gimbal2imubody);
+    Eigen::Vector3d zero_translation(0, 0, 0); // 共原点
+    ros2_publisher->publish_tf(q_gimbal2imubody, zero_translation);
     
     // 发布云台反馈消息
     uint8_t mode_value = 0;

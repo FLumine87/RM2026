@@ -19,19 +19,20 @@ Planner::Planner(const std::string & config_path)
   decision_speed_ = tools::read<double>(yaml, "decision_speed");
   high_speed_delay_time_ = tools::read<double>(yaml, "high_speed_delay_time");
   low_speed_delay_time_ = tools::read<double>(yaml, "low_speed_delay_time");
+  fire_delay_ = tools::read<double>(yaml, "fire_delay");
 
   setup_yaw_solver(config_path);
   setup_pitch_solver(config_path);
 }
 
-Plan Planner::plan(Target target, double bullet_speed)
+Plan Planner::plan(Target target, double bullet_speed, double gimbal_delay)
 {
   // 0. Check bullet speed
   if (bullet_speed < 10 || bullet_speed > 25) {
     bullet_speed = 22;
   }
 
-  // 1. Predict fly_time
+  // 1. Predict fly_time (目标已经预测到 T + gimbal_delay + fly_time)
   Eigen::Vector3d xyz;
   auto min_dist = 1e10;
   for (auto & xyza : target.armor_xyza_list()) {
@@ -42,7 +43,7 @@ Plan Planner::plan(Target target, double bullet_speed)
     }
   }
   auto bullet_traj = tools::Trajectory(bullet_speed, min_dist, xyz.z());
-  target.predict(bullet_traj.fly_time);
+  // 不需要再额外预测，因为外部已经预测过了
 
   // 2. Get trajectory
   double yaw0;
@@ -84,27 +85,50 @@ Plan Planner::plan(Target target, double bullet_speed)
   plan.pitch_vel = pitch_solver_->work->x(1, HALF_HORIZON);
   plan.pitch_acc = pitch_solver_->work->u(0, HALF_HORIZON);
 
-  auto shoot_offset_ = 2;
+  // 计算开火偏移：gimbal_delay - fire_delay
+  // 开火指令需要在 T + gimbal_delay - fire_delay 时刻发送
+  double fire_offset_time = gimbal_delay - fire_delay_;
+  int shoot_offset = static_cast<int>(fire_offset_time / DT);
+  shoot_offset = std::max(0, shoot_offset);
+  shoot_offset = std::min(shoot_offset, HORIZON - HALF_HORIZON - 1);
+  
   plan.fire =
     std::hypot(
-      traj(0, HALF_HORIZON + shoot_offset_) - yaw_solver_->work->x(0, HALF_HORIZON + shoot_offset_),
-      traj(2, HALF_HORIZON + shoot_offset_) -
-        pitch_solver_->work->x(0, HALF_HORIZON + shoot_offset_)) < fire_thresh_;
+      traj(0, HALF_HORIZON + shoot_offset) - yaw_solver_->work->x(0, HALF_HORIZON + shoot_offset),
+      traj(2, HALF_HORIZON + shoot_offset) - 
+        pitch_solver_->work->x(0, HALF_HORIZON + shoot_offset)) < fire_thresh_;
   return plan;
+}
+
+Plan Planner::plan(Target target, double bullet_speed)
+{
+  return plan(target, bullet_speed, 0.0);
 }
 
 Plan Planner::plan(std::optional<Target> target, double bullet_speed)
 {
   if (!target.has_value()) return {false};
 
-  double delay_time =
+  double gimbal_delay =
     std::abs(target->ekf_x()[7]) > decision_speed_ ? high_speed_delay_time_ : low_speed_delay_time_;
 
-  auto future = std::chrono::steady_clock::now() + std::chrono::microseconds(int(delay_time * 1e6));
-
+  Eigen::Vector3d xyz;
+  auto min_dist = 1e10;
+  for (auto & xyza : target->armor_xyza_list()) {
+    auto dist = xyza.head<2>().norm();
+    if (dist < min_dist) {
+      min_dist = dist;
+      xyz = xyza.head<3>();
+    }
+  }
+  auto bullet_traj = tools::Trajectory(bullet_speed, min_dist, xyz.z());
+  
+  double total_prediction_time = gimbal_delay + bullet_traj.fly_time;
+  
+  auto future = std::chrono::steady_clock::now() + std::chrono::microseconds(int(total_prediction_time * 1e6));
   target->predict(future);
 
-  return plan(*target, bullet_speed);
+  return plan(*target, bullet_speed, gimbal_delay);
 }
 
 void Planner::setup_yaw_solver(const std::string & config_path)

@@ -37,6 +37,7 @@ public:
   Planner(const std::string & config_path);
 
   Plan plan(Target target, double bullet_speed);
+  Plan plan(Target target, double bullet_speed, double gimbal_delay);
   Plan plan(std::optional<Target> target, double bullet_speed);
 
 private:
@@ -44,6 +45,7 @@ private:
   double pitch_offset_;
   double fire_thresh_;
   double low_speed_delay_time_, high_speed_delay_time_, decision_speed_;
+  double fire_delay_;
 
   TinySolver * yaw_solver_;
   TinySolver * pitch_solver_;
