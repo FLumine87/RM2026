@@ -12,6 +12,12 @@
 #include "serial/serial.h"
 #include "tools/thread_safe_queue.hpp"
 
+#include <rclcpp/rclcpp.hpp>
+#include "auto_aim_interfaces/msg/joint_state.hpp"
+#include "auto_aim_interfaces/msg/sentry_status.hpp"
+#include "geometry_msgs/msg/twist.hpp"
+#include "std_msgs/msg/uint8.hpp"
+
 namespace io
 {
 struct __attribute__((packed)) GimbalToVision
@@ -25,6 +31,11 @@ struct __attribute__((packed)) GimbalToVision
   float pitch_vel;
   float bullet_speed;
   uint16_t bullet_count;  // 子弹累计发送次数
+  //导航
+  uint16_t timestamp;
+  uint16_t hp_;
+  uint16_t time_;
+  uint8_t is_play;
   uint16_t crc16;
 };
 
@@ -40,6 +51,10 @@ struct __attribute__((packed)) VisionToGimbal
   float pitch;
   float pitch_vel;
   float pitch_acc;
+  //导航
+  float vx;
+  float vy;
+  uint8_t posture; // 姿态指令， 0-移动， 1-防御， 2-进攻
   uint16_t crc16;
 };
 
@@ -99,6 +114,24 @@ private:
   bool read(uint8_t * buffer, size_t size);
   void read_thread();
   void reconnect();
+
+  void init_ros2();
+  void publish_to_ros2();
+  void cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr msg);
+  void posture_callback(const std_msgs::msg::UInt8::SharedPtr msg);
+  void ros2_spin();
+
+  std::shared_ptr<rclcpp::Node> ros2_node_;
+  rclcpp::Publisher<auto_aim_interfaces::msg::JointState>::SharedPtr joint_state_pub_;
+  rclcpp::Publisher<auto_aim_interfaces::msg::SentryStatus>::SharedPtr sentry_status_pub_;
+  rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub_;
+  rclcpp::Subscription<std_msgs::msg::UInt8>::SharedPtr posture_sub_;
+  std::thread ros2_spin_thread_;
+
+  std::mutex nav_mutex_;
+  float nav_vx_ = 0.0f;
+  float nav_vy_ = 0.0f;
+  uint8_t nav_posture_ = 0;
 };
 
 }  // namespace io

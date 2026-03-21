@@ -24,12 +24,15 @@ Gimbal::Gimbal(const std::string & config_path)
 
   queue_.pop();
   tools::logger()->info("[Gimbal] First q received.");
+
+  init_ros2();
 }
 
 Gimbal::~Gimbal()
 {
   quit_ = true;
   if (thread_.joinable()) thread_.join();
+  if (ros2_spin_thread_.joinable()) ros2_spin_thread_.join();
   serial_.close();
 }
 
@@ -107,6 +110,14 @@ void Gimbal::send(
   tx_data_.pitch = pitch;
   tx_data_.pitch_vel = pitch_vel;
   tx_data_.pitch_acc = pitch_acc;
+
+  {
+    std::lock_guard<std::mutex> lock(nav_mutex_);
+    tx_data_.vx = nav_vx_;
+    tx_data_.vy = nav_vy_;
+    tx_data_.posture = nav_posture_;
+  }
+
   tx_data_.crc16 = tools::get_crc16(
     reinterpret_cast<uint8_t *>(&tx_data_), sizeof(tx_data_) - sizeof(tx_data_.crc16));
 
@@ -165,6 +176,8 @@ void Gimbal::read_thread()
     Eigen::Quaterniond q(rx_data_.q[0], rx_data_.q[1], rx_data_.q[2], rx_data_.q[3]);
     queue_.push({q, t});
 
+    publish_to_ros2();
+
     std::lock_guard<std::mutex> lock(mutex_);
 
     state_.yaw = rx_data_.yaw;
@@ -209,7 +222,7 @@ void Gimbal::reconnect()
     }
 
     try {
-      serial_.open();  // 尝试重新打开
+      serial_.open();
       queue_.clear();
       tools::logger()->info("[Gimbal] Reconnected serial successfully.");
       break;
@@ -218,6 +231,64 @@ void Gimbal::reconnect()
       std::this_thread::sleep_for(std::chrono::seconds(1));
     }
   }
+}
+
+void Gimbal::init_ros2()
+{
+  static std::once_flag ros2_init_flag;
+  std::call_once(ros2_init_flag, []() {
+    if (!rclcpp::ok()) {
+      rclcpp::init(0, nullptr);
+    }
+  });
+
+  ros2_node_ = std::make_shared<rclcpp::Node>("gimbal_bridge");
+
+  joint_state_pub_ = ros2_node_->create_publisher<auto_aim_interfaces::msg::JointState>("/joint_states", 10);
+  sentry_status_pub_ = ros2_node_->create_publisher<auto_aim_interfaces::msg::SentryStatus>("/from_sentry", 10);
+
+  cmd_vel_sub_ = ros2_node_->create_subscription<geometry_msgs::msg::Twist>(
+    "/cmd_vel", 10, std::bind(&Gimbal::cmd_vel_callback, this, std::placeholders::_1));
+
+  posture_sub_ = ros2_node_->create_subscription<std_msgs::msg::UInt8>(
+    "/posture_number", 10, std::bind(&Gimbal::posture_callback, this, std::placeholders::_1));
+
+  ros2_spin_thread_ = std::thread(&Gimbal::ros2_spin, this);
+}
+
+void Gimbal::publish_to_ros2()
+{
+  auto joint_state_msg = std::make_shared<auto_aim_interfaces::msg::JointState>();
+  joint_state_msg->header.stamp = ros2_node_->now();
+  joint_state_msg->imu_yaw = rx_data_.yaw;
+  joint_state_msg->imu_pitch = rx_data_.pitch;
+  joint_state_pub_->publish(*joint_state_msg);
+
+  auto sentry_status_msg = std::make_shared<auto_aim_interfaces::msg::SentryStatus>();
+  sentry_status_msg->header.stamp = ros2_node_->now();
+  sentry_status_msg->timestamp = rx_data_.timestamp;
+  sentry_status_msg->hp = rx_data_.hp_;
+  sentry_status_msg->time = rx_data_.time_;
+  sentry_status_msg->is_play = rx_data_.is_play;
+  sentry_status_pub_->publish(*sentry_status_msg);
+}
+
+void Gimbal::cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr msg)
+{
+  std::lock_guard<std::mutex> lock(nav_mutex_);
+  nav_vx_ = static_cast<float>(msg->linear.x);
+  nav_vy_ = static_cast<float>(msg->linear.y);
+}
+
+void Gimbal::posture_callback(const std_msgs::msg::UInt8::SharedPtr msg)
+{
+  std::lock_guard<std::mutex> lock(nav_mutex_);
+  nav_posture_ = msg->data;
+}
+
+void Gimbal::ros2_spin()
+{
+  rclcpp::spin(ros2_node_);
 }
 
 }  // namespace io
