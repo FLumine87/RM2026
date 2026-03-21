@@ -51,26 +51,43 @@ find_package(auto_aim_interfaces QUIET)
 # 如果找不到 ROS 环境，则跳过 ROS 相关的部分
 if(NOT ament_cmake_FOUND OR NOT rclcpp_FOUND OR NOT std_msgs_FOUND OR NOT rosidl_typesupport_cpp_FOUND)
     message(WARNING "ROS2 not found, skipping ROS2 specific code.")
-elseif(NOT sp_msgs_FOUND)
-    # 找到 ROS2 但没有 sp_msgs，不编译 ros2.cpp（因为 ros2.cpp 会包含 subscribe2nav.hpp）
-    # auto_aim_debug_mpc_rosdebug 不使用 io::ROS2，直接使用 rclcpp
-    message(STATUS "ROS2 environment found, but sp_msgs not found. Skipping io::ROS2 compilation.")
-    
-    # 不编译任何 ROS2 相关文件，因为 auto_aim_debug_mpc_rosdebug 直接使用 rclcpp
 else()
-    # 找到 ROS2 和 sp_msgs，编译所有 ROS2 相关代码
-    message(STATUS "ROS2 environment found, compiling ROS2-related code (with sp_msgs).")
+    # 找到 ROS2 环境
+    message(STATUS "ROS2 environment found, compiling ROS2-related code.")
     
-    # 添加 ROS2 相关的文件（包含 subscribe2nav）
-    target_sources(io PRIVATE ros2/publish2nav.cpp ros2/ros2.cpp ros2/subscribe2nav.cpp)
-
-    # 设置 ROS2 依赖
+    # 强制添加 auto_aim_interfaces 的包含路径（参考主 CMakeLists.txt）
+    include_directories("${CMAKE_CURRENT_SOURCE_DIR}/../../../install/auto_aim_interfaces/include")
+    include_directories("${CMAKE_CURRENT_SOURCE_DIR}/../../../install/auto_aim_interfaces/include/auto_aim_interfaces")
+    
+    # 添加基本 ROS2 依赖
     include_directories(${std_msgs_INCLUDE_DIRS})
     include_directories(${geometry_msgs_INCLUDE_DIRS})
     include_directories(${tf2_msgs_INCLUDE_DIRS})
     include_directories(${visualization_msgs_INCLUDE_DIRS})
-    # if(auto_aim_interfaces_FOUND)
-    include_directories(${auto_aim_interfaces_INCLUDE_DIRS})
-    # endif()
-    ament_target_dependencies(io rclcpp std_msgs sp_msgs geometry_msgs tf2_msgs visualization_msgs auto_aim_interfaces)
-endif()
+    
+    # 添加基本 ROS2 依赖
+    ament_target_dependencies(io rclcpp std_msgs geometry_msgs tf2_msgs visualization_msgs)
+    
+    # 直接链接 auto_aim_interfaces 类型支持库（参考主 CMakeLists.txt）
+    set(AUTO_AIM_INTERFACES_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../install/auto_aim_interfaces/lib")
+    if(EXISTS "${AUTO_AIM_INTERFACES_LIB_DIR}")
+        file(GLOB AUTO_AIM_INTERFACES_LIBS "${AUTO_AIM_INTERFACES_LIB_DIR}/libauto_aim_interfaces__rosidl_typesupport_*.so")
+        if(AUTO_AIM_INTERFACES_LIBS)
+            message(STATUS "Linking against auto_aim_interfaces typesupport libraries for io: ${AUTO_AIM_INTERFACES_LIBS}")
+            target_link_libraries(io ${AUTO_AIM_INTERFACES_LIBS})
+        else()
+            message(WARNING "No auto_aim_interfaces typesupport libraries found in ${AUTO_AIM_INTERFACES_LIB_DIR}")
+        endif()
+    else()
+        message(WARNING "auto_aim_interfaces lib directory not found: ${AUTO_AIM_INTERFACES_LIB_DIR}")
+    endif()
+    
+    # 只有在找到 sp_msgs 时才编译包含 subscribe2nav 的 ROS2 文件
+    if(sp_msgs_FOUND)
+        message(STATUS "sp_msgs found, compiling full ROS2 code (with subscribe2nav).")
+        target_sources(io PRIVATE ros2/publish2nav.cpp ros2/ros2.cpp ros2/subscribe2nav.cpp)
+        ament_target_dependencies(io sp_msgs)
+    else()
+        message(STATUS "sp_msgs not found, skipping subscribe2nav related code.")
+        target_sources(io PRIVATE ros2/publish2nav.cpp ros2/ros2.cpp)
+    endif()
