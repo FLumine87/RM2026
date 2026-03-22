@@ -46,7 +46,6 @@ find_package(sp_msgs QUIET)
 find_package(geometry_msgs QUIET)
 find_package(tf2_msgs QUIET)
 find_package(visualization_msgs QUIET)
-find_package(auto_aim_interfaces QUIET)
 
 # 如果找不到 ROS 环境，则跳过 ROS 相关的部分
 if(NOT ament_cmake_FOUND OR NOT rclcpp_FOUND OR NOT std_msgs_FOUND OR NOT rosidl_typesupport_cpp_FOUND)
@@ -64,30 +63,5 @@ else()
     include_directories(${geometry_msgs_INCLUDE_DIRS})
     include_directories(${tf2_msgs_INCLUDE_DIRS})
     include_directories(${visualization_msgs_INCLUDE_DIRS})
-    
-    # 添加基本 ROS2 依赖
-    ament_target_dependencies(io rclcpp std_msgs geometry_msgs tf2_msgs visualization_msgs)
-    
-    # 直接链接 auto_aim_interfaces 类型支持库（参考主 CMakeLists.txt）
-    set(AUTO_AIM_INTERFACES_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../install/auto_aim_interfaces/lib")
-    if(EXISTS "${AUTO_AIM_INTERFACES_LIB_DIR}")
-        file(GLOB AUTO_AIM_INTERFACES_LIBS "${AUTO_AIM_INTERFACES_LIB_DIR}/libauto_aim_interfaces__rosidl_typesupport_*.so")
-        if(AUTO_AIM_INTERFACES_LIBS)
-            message(STATUS "Linking against auto_aim_interfaces typesupport libraries for io: ${AUTO_AIM_INTERFACES_LIBS}")
-            target_link_libraries(io ${AUTO_AIM_INTERFACES_LIBS})
-        else()
-            message(WARNING "No auto_aim_interfaces typesupport libraries found in ${AUTO_AIM_INTERFACES_LIB_DIR}")
-        endif()
-    else()
-        message(WARNING "auto_aim_interfaces lib directory not found: ${AUTO_AIM_INTERFACES_LIB_DIR}")
-    endif()
-    
-    # 只有在找到 sp_msgs 时才编译包含 subscribe2nav 的 ROS2 文件
-    if(sp_msgs_FOUND)
-        message(STATUS "sp_msgs found, compiling full ROS2 code (with subscribe2nav).")
-        target_sources(io PRIVATE ros2/publish2nav.cpp ros2/ros2.cpp ros2/subscribe2nav.cpp)
-        ament_target_dependencies(io sp_msgs)
-    else()
-        message(STATUS "sp_msgs not found, skipping subscribe2nav related code.")
-        target_sources(io PRIVATE ros2/publish2nav.cpp ros2/ros2.cpp)
-    endif()
+    ament_target_dependencies(io rclcpp std_msgs sp_msgs geometry_msgs tf2_msgs visualization_msgs)
+endif()

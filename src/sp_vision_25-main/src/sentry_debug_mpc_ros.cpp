@@ -6,20 +6,21 @@
 #include <nlohmann/json.hpp>
 #include <opencv2/opencv.hpp>
 #include <thread>
+#include <yaml-cpp/yaml.h>
 
 #include "geometry_msgs/msg/pose.hpp"
 #include "geometry_msgs/msg/point.hpp"
 #include "geometry_msgs/msg/vector3.hpp"
 #include "geometry_msgs/msg/transform.hpp"
+#include "geometry_msgs/msg/twist.hpp"
 #include "io/camera.hpp"
 #include "io/gimbal/gimbal.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/image.hpp"
 #include "std_msgs/msg/header.hpp"
 #include "std_msgs/msg/string.hpp"
-#include "tasks/auto_aim/aimer.hpp"
+#include "std_msgs/msg/u_int8.hpp"
 #include "tasks/auto_aim/planner/planner.hpp"
-#include "tasks/auto_aim/shooter.hpp"
 #include "tasks/auto_aim/solver.hpp"
 #include "tasks/auto_aim/tracker.hpp"
 #include "tasks/auto_aim/yolo.hpp"
@@ -30,7 +31,6 @@
 #include "tools/math_tools.hpp"
 #include "tools/plotter.hpp"
 #include "tools/thread_safe_queue.hpp"
-#include "tools/trajectory.hpp"
 #include "visualization_msgs/msg/marker.hpp"
 #include "visualization_msgs/msg/marker_array.hpp"
 
@@ -41,12 +41,16 @@
 #include <auto_aim_interfaces/msg/target.hpp>
 #include <auto_aim_interfaces/msg/gimbal.hpp>
 #include <auto_aim_interfaces/msg/gimbal_feedback.hpp>
+#include <auto_aim_interfaces/msg/sentry_status.hpp>
+#include <auto_aim_interfaces/msg/joint_state.hpp>
 #else
 #include "auto_aim_interfaces/msg/armor.hpp"
 #include "auto_aim_interfaces/msg/armors.hpp"
 #include "auto_aim_interfaces/msg/target.hpp"
 #include "auto_aim_interfaces/msg/gimbal.hpp"
 #include "auto_aim_interfaces/msg/gimbal_feedback.hpp"
+#include "auto_aim_interfaces/msg/sentry_status.hpp"
+#include "auto_aim_interfaces/msg/joint_state.hpp"
 #endif
 
 using namespace std::chrono_literals;
@@ -56,8 +60,8 @@ using namespace std::chrono_literals;
 class ROS2Publisher : public rclcpp::Node
 {
 public:
-  ROS2Publisher()
-    : Node("auto_aim_debug_publisher")
+  ROS2Publisher(const std::string & config_path)
+    : Node("sentry_debug_publisher")
     , tf_publisher_(this->create_publisher<tf2_msgs::msg::TFMessage>("tf", 10))
     , image_publisher_(this->create_publisher<sensor_msgs::msg::Image>("camera/image_raw", 10))
     // , armor_publisher_(this->create_publisher<sensor_msgs::msg::Image>("armor/image", 10))
@@ -67,7 +71,24 @@ public:
     , gimbal_msg_publisher_(this->create_publisher<auto_aim_interfaces::msg::Gimbal>("gimbal_msg", 10))
     , gimbal_feedback_publisher_(this->create_publisher<auto_aim_interfaces::msg::GimbalFeedback>("gimbal_feedback", 10))
     , marker_pub_(this->create_publisher<visualization_msgs::msg::MarkerArray>("visualization_marker", 10))
+    , joint_state_pub_(this->create_publisher<auto_aim_interfaces::msg::JointState>("/joint_states", 10))
+    , sentry_status_pub_(this->create_publisher<auto_aim_interfaces::msg::SentryStatus>("/from_sentry", 10))
+    , cmd_vel_sub_(this->create_subscription<geometry_msgs::msg::Twist>(
+        "/cmd_vel", 10, std::bind(&ROS2Publisher::cmd_vel_callback, this, std::placeholders::_1)))
+    , posture_sub_(this->create_subscription<std_msgs::msg::UInt8>(
+        "/posture_number", 10, std::bind(&ROS2Publisher::posture_callback, this, std::placeholders::_1)))
   {
+    auto yaml = YAML::LoadFile(config_path);
+    
+    auto R_gimbal2imubody_data = yaml["R_gimbal2imubody"].as<std::vector<double>>();
+    R_gimbal2imubody_ = Eigen::Matrix<double, 3, 3, Eigen::RowMajor>(R_gimbal2imubody_data.data());
+    
+    auto R_camera2gimbal_data = yaml["R_camera2gimbal"].as<std::vector<double>>();
+    R_camera2gimbal_ = Eigen::Matrix<double, 3, 3, Eigen::RowMajor>(R_camera2gimbal_data.data());
+    
+    auto t_camera2gimbal_data = yaml["t_camera2gimbal"].as<std::vector<double>>();
+    t_camera2gimbal_ = Eigen::Vector3d(t_camera2gimbal_data.data());
+
     position_marker_.ns = "position";
     position_marker_.type = visualization_msgs::msg::Marker::SPHERE;
     position_marker_.scale.x = position_marker_.scale.y = position_marker_.scale.z = 0.1;
@@ -101,25 +122,61 @@ public:
     armor_marker_.color.r = 1.0;
   }
 
-  void publish_tf(const Eigen::Quaterniond & q, const Eigen::Vector3d & t)
+  void publish_tf(const Eigen::Quaterniond & q_gimbal)
   {
     tf2_msgs::msg::TFMessage tf_msg;
-    geometry_msgs::msg::TransformStamped transform;
+    auto now = this->now();
 
-    transform.header.stamp = this->now();
-    transform.header.frame_id = "world";
-    transform.child_frame_id = "camera";
+    Eigen::Matrix3d R_imubody2imuabs = q_gimbal.toRotationMatrix();
+    Eigen::Matrix3d R_gimbal2world = R_gimbal2imubody_.transpose() * R_imubody2imuabs * R_gimbal2imubody_;
+    Eigen::Quaterniond q_gimbal2world(R_gimbal2world);
 
-    transform.transform.translation.x = t.x();
-    transform.transform.translation.y = t.y();
-    transform.transform.translation.z = t.z();
+    geometry_msgs::msg::TransformStamped transform_odom_gimbal;
+    transform_odom_gimbal.header.stamp = now;
+    transform_odom_gimbal.header.frame_id = "odom";
+    transform_odom_gimbal.child_frame_id = "gimbal_link";
+    transform_odom_gimbal.transform.translation.x = 0;
+    transform_odom_gimbal.transform.translation.y = 0;
+    transform_odom_gimbal.transform.translation.z = 0;
+    transform_odom_gimbal.transform.rotation.x = q_gimbal2world.x();
+    transform_odom_gimbal.transform.rotation.y = q_gimbal2world.y();
+    transform_odom_gimbal.transform.rotation.z = q_gimbal2world.z();
+    transform_odom_gimbal.transform.rotation.w = q_gimbal2world.w();
+    tf_msg.transforms.push_back(transform_odom_gimbal);
 
-    transform.transform.rotation.x = q.x();
-    transform.transform.rotation.y = q.y();
-    transform.transform.rotation.z = q.z();
-    transform.transform.rotation.w = q.w();
+    geometry_msgs::msg::TransformStamped transform_gimbal_camera;
+    transform_gimbal_camera.header.stamp = now;
+    transform_gimbal_camera.header.frame_id = "gimbal_link";
+    transform_gimbal_camera.child_frame_id = "camera_link";
+    transform_gimbal_camera.transform.translation.x = t_camera2gimbal_.x();
+    transform_gimbal_camera.transform.translation.y = t_camera2gimbal_.y();
+    transform_gimbal_camera.transform.translation.z = t_camera2gimbal_.z();
+    
+    Eigen::Quaterniond q_camera2gimbal(R_camera2gimbal_);
+    transform_gimbal_camera.transform.rotation.x = q_camera2gimbal.x();
+    transform_gimbal_camera.transform.rotation.y = q_camera2gimbal.y();
+    transform_gimbal_camera.transform.rotation.z = q_camera2gimbal.z();
+    transform_gimbal_camera.transform.rotation.w = q_camera2gimbal.w();
+    tf_msg.transforms.push_back(transform_gimbal_camera);
 
-    tf_msg.transforms.push_back(transform);
+    geometry_msgs::msg::TransformStamped transform_camera_optical;
+    transform_camera_optical.header.stamp = now;
+    transform_camera_optical.header.frame_id = "camera_link";
+    transform_camera_optical.child_frame_id = "camera_optical_frame";
+    transform_camera_optical.transform.translation.x = 0;
+    transform_camera_optical.transform.translation.y = 0;
+    transform_camera_optical.transform.translation.z = 0;
+    
+    Eigen::Quaterniond q_optical;
+    q_optical = Eigen::AngleAxisd(-M_PI / 2, Eigen::Vector3d::UnitX()) *
+                Eigen::AngleAxisd(0, Eigen::Vector3d::UnitY()) *
+                Eigen::AngleAxisd(-M_PI / 2, Eigen::Vector3d::UnitZ());
+    transform_camera_optical.transform.rotation.x = q_optical.x();
+    transform_camera_optical.transform.rotation.y = q_optical.y();
+    transform_camera_optical.transform.rotation.z = q_optical.z();
+    transform_camera_optical.transform.rotation.w = q_optical.w();
+    tf_msg.transforms.push_back(transform_camera_optical);
+
     tf_publisher_->publish(tf_msg);
   }
 
@@ -127,7 +184,7 @@ public:
   {
     auto msg = std::make_shared<sensor_msgs::msg::Image>();
     msg->header.stamp = this->now();
-    msg->header.frame_id = "camera";
+    msg->header.frame_id = "camera_optical_frame";
     msg->height = img.rows;
     msg->width = img.cols;
     msg->encoding = "bgr8";
@@ -147,7 +204,7 @@ public:
   {
     auto msg = std::make_shared<auto_aim_interfaces::msg::Armors>();
     msg->header.stamp = this->now();
-    msg->header.frame_id = "world";
+    msg->header.frame_id = "odom";
     
     for (const auto & armor : armors) {
       auto_aim_interfaces::msg::Armor armor_msg;
@@ -182,7 +239,7 @@ public:
   {
     auto msg = std::make_shared<auto_aim_interfaces::msg::Target>();
     msg->header.stamp = this->now();
-    msg->header.frame_id = "world";
+    msg->header.frame_id = "odom";
     msg->tracking = true;
     msg->id = std::to_string(static_cast<int>(target.name));
     msg->armors_num = static_cast<int32_t>(target.armor_xyza_list().size());
@@ -211,7 +268,7 @@ public:
   {
     auto msg = std::make_shared<auto_aim_interfaces::msg::Target>();
     msg->header.stamp = this->now();
-    msg->header.frame_id = "world";
+    msg->header.frame_id = "odom";
     msg->tracking = false;
     target_msg_publisher_->publish(*msg);
   }
@@ -253,6 +310,61 @@ public:
     gimbal_feedback_publisher_->publish(*msg);
   }
 
+  void publish_joint_state(const io::GimbalState & state)
+  {
+    auto joint_state_msg = std::make_shared<auto_aim_interfaces::msg::JointState>();
+    joint_state_msg->header.stamp = this->now();
+    joint_state_msg->header.frame_id = "gimbal";
+    joint_state_msg->imu_yaw = state.yaw;
+    joint_state_msg->imu_pitch = state.pitch;
+    
+    joint_state_pub_->publish(*joint_state_msg);
+  }
+
+  void publish_sentry_status(const io::GimbalState & state)
+  {
+    auto sentry_status_msg = std::make_shared<auto_aim_interfaces::msg::SentryStatus>();
+    sentry_status_msg->header.stamp = this->now();
+    sentry_status_msg->header.frame_id = "sentry";
+    sentry_status_msg->timestamp = state.timestamp;
+    sentry_status_msg->hp = state.hp;
+    sentry_status_msg->time = state.time;
+    sentry_status_msg->is_play = state.is_play;
+    
+    sentry_status_pub_->publish(*sentry_status_msg);
+  }
+
+  void cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr msg)
+  {
+    std::lock_guard<std::mutex> lock(nav_mutex_);
+    nav_vx_ = msg->linear.x;
+    nav_vy_ = msg->linear.y;
+  }
+
+  void posture_callback(const std_msgs::msg::UInt8::SharedPtr msg)
+  {
+    std::lock_guard<std::mutex> lock(nav_mutex_);
+    nav_posture_ = msg->data;
+  }
+
+  float get_nav_vx() const
+  {
+    std::lock_guard<std::mutex> lock(nav_mutex_);
+    return nav_vx_;
+  }
+
+  float get_nav_vy() const
+  {
+    std::lock_guard<std::mutex> lock(nav_mutex_);
+    return nav_vy_;
+  }
+
+  uint8_t get_nav_posture() const
+  {
+    std::lock_guard<std::mutex> lock(nav_mutex_);
+    return nav_posture_;
+  }
+
   void publish_marker(
     bool tracking, const Eigen::Vector3d & position, const Eigen::Vector3d & velocity, 
     const Eigen::Vector3d & angular_velocity, const std::vector<Eigen::Vector3d> & armor_positions,
@@ -263,7 +375,7 @@ public:
 
     if (tracking) {
       position_marker_.header.stamp = now;
-      position_marker_.header.frame_id = "world";
+      position_marker_.header.frame_id = "odom";
       position_marker_.action = visualization_msgs::msg::Marker::ADD;
       position_marker_.pose.position.x = position.x();
       position_marker_.pose.position.y = position.y();
@@ -271,7 +383,7 @@ public:
       position_marker_.pose.orientation.w = 1.0;
 
       linear_v_marker_.header.stamp = now;
-      linear_v_marker_.header.frame_id = "world";
+      linear_v_marker_.header.frame_id = "odom";
       linear_v_marker_.action = visualization_msgs::msg::Marker::ADD;
       linear_v_marker_.points.clear();
       geometry_msgs::msg::Point start_point, end_point;
@@ -285,7 +397,7 @@ public:
       linear_v_marker_.points.push_back(end_point);
 
       angular_v_marker_.header.stamp = now;
-      angular_v_marker_.header.frame_id = "world";
+      angular_v_marker_.header.frame_id = "odom";
       angular_v_marker_.action = visualization_msgs::msg::Marker::ADD;
       angular_v_marker_.points.clear();
       start_point.x = position.x();
@@ -298,7 +410,7 @@ public:
       angular_v_marker_.points.push_back(end_point);
 
       armor_marker_.header.stamp = now;
-      armor_marker_.header.frame_id = "world";
+      armor_marker_.header.frame_id = "odom";
       armor_marker_.action = visualization_msgs::msg::Marker::ADD;
       armor_marker_.scale.y = 0.135;
       for (size_t i = 0; i < armor_positions.size(); i++) {
@@ -338,11 +450,25 @@ public:
   rclcpp::Publisher<auto_aim_interfaces::msg::Gimbal>::SharedPtr gimbal_msg_publisher_;
   rclcpp::Publisher<auto_aim_interfaces::msg::GimbalFeedback>::SharedPtr gimbal_feedback_publisher_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_pub_;
+  rclcpp::Publisher<auto_aim_interfaces::msg::JointState>::SharedPtr joint_state_pub_;
+  rclcpp::Publisher<auto_aim_interfaces::msg::SentryStatus>::SharedPtr sentry_status_pub_;
+  rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub_;
+  rclcpp::Subscription<std_msgs::msg::UInt8>::SharedPtr posture_sub_;
+  
+  // 导航相关变量
+  mutable std::mutex nav_mutex_;
+  float nav_vx_ = 0.0f;
+  float nav_vy_ = 0.0f;
+  uint8_t nav_posture_ = 0;
 
   visualization_msgs::msg::Marker position_marker_;
   visualization_msgs::msg::Marker linear_v_marker_;
   visualization_msgs::msg::Marker angular_v_marker_;
   visualization_msgs::msg::Marker armor_marker_;
+
+  Eigen::Matrix3d R_gimbal2imubody_;
+  Eigen::Matrix3d R_camera2gimbal_;
+  Eigen::Vector3d t_camera2gimbal_;
 };
 
 using namespace std::chrono_literals;
@@ -364,7 +490,7 @@ int main(int argc, char * argv[])
   }
 
   rclcpp::init(argc, argv);
-  auto ros2_publisher = std::make_shared<ROS2Publisher>();
+  auto ros2_publisher = std::make_shared<ROS2Publisher>(config_path);
 
   io::Gimbal gimbal(config_path);
   io::Camera camera(config_path);
@@ -373,14 +499,12 @@ int main(int argc, char * argv[])
   auto_aim::Solver solver(config_path);
   auto_aim::Tracker tracker(config_path, solver);
   auto_aim::Planner planner(config_path);
-  auto_aim::Aimer aimer(config_path);
-  auto_aim::Shooter shooter(config_path);
 
   std::mutex plan_mutex;
   auto_aim::Plan latest_plan = {};
 
-  tools::ThreadSafeQueue<std::list<auto_aim::Target>, true> targets_queue(1);
-  targets_queue.push({});
+  tools::ThreadSafeQueue<std::optional<auto_aim::Target>, true> target_queue(1);
+  target_queue.push(std::nullopt);
 
   std::atomic<bool> quit = false;
   std::thread ros2_spin_thread([&]() { rclcpp::spin(ros2_publisher); });
@@ -390,94 +514,34 @@ int main(int argc, char * argv[])
     uint16_t last_bullet_count = 0;
 
     while (!quit) {
-      auto targets = targets_queue.front();
+      auto target = target_queue.front();
       auto gs = gimbal.state();
-      
-      auto target = targets.empty() ? std::nullopt : std::optional<auto_aim::Target>(targets.front());
       auto plan = planner.plan(target, gs.bullet_speed);
-
-      auto timestamp = std::chrono::steady_clock::now();
-      auto aimer_command = aimer.aim_with_plan(targets, plan, timestamp, gs.bullet_speed);
-
-      // 计算基于旋转中心的线性预测 yaw
-      double send_yaw = plan.yaw;
-      if (false) {
-        // 新方案：基于旋转中心的线性预测
-        double fly_time = 0.223;  // 默认飞行时间
-        if (target.has_value()) {
-          // 从 EKF 获取旋转中心位置和速度
-          double center_x = target->ekf_x()[0];
-          double center_y = target->ekf_x()[2];
-          double center_z = target->ekf_x()[4];
-          double vx = target->ekf_x()[1];
-          double vy = target->ekf_x()[3];
-
-          // 计算距离并使用 tools 计算飞行时间
-          double dist = std::sqrt(center_x * center_x + center_y * center_y);
-          tools::Trajectory bullet_traj(gs.bullet_speed, dist, center_z);
-          if (!bullet_traj.unsolvable) {
-            fly_time = bullet_traj.fly_time;
-          }
-
-          // 计算额外延迟：云台延迟
-          // 从目标的ekf状态中获取角速度 (ekf_x()[7] 是角速度)
-          // double angular_velocity = target->ekf_x()[7];
-          // 从配置中获取决策速度和延迟时间
-          // double decision_speed = 8.0;  // 与配置文件中的decision_speed对应
-          // double high_speed_delay = 0.025;  // 与配置文件中的high_speed_delay_time对应
-          // double low_speed_delay = 0.015;   // 与配置文件中的low_speed_delay_time对应
-          
-          // 根据角速度选择合适的延迟时间
-          // double delay_time = std::abs(angular_velocity) > decision_speed ? high_speed_delay : low_speed_delay;
-          double delay_time = 0.1;
-          // 线性预测：基于旋转中心平移的yaw预测
-          
-          // 对目标进行预测，预测时间为总延迟
-          auto future_target = *target;
-          future_target.predict(fly_time + delay_time);
-          
-          // 从预测后的目标状态中获取旋转中心的位置
-          double future_center_x = future_target.ekf_x()[0];
-          double future_center_y = future_target.ekf_x()[2];
-          
-          // 计算到预测后的旋转中心位置的yaw角度
-          send_yaw = tools::limit_rad(std::atan2(future_center_y, future_center_x));
-        }
-      } else {
-        // 旧方案：使用 plan.yaw
-        send_yaw = plan.yaw;
-      }
-
-      io::Command command;
-      command.control = plan.control;
-      command.shoot = plan.fire;
-      command.yaw = send_yaw;  // 使用实际发送的 yaw
-      command.pitch = plan.pitch;
-
-      Eigen::Vector3d gimbal_pos(gs.yaw, gs.pitch, 0.0);
-
-      bool shooter_fire = shooter.shoot(command, aimer, targets, gimbal_pos);
-
-      bool final_fire = plan.fire && shooter_fire;
-
-      // // 如果ekf预测出来的目标的yaw是往右走的，火控位设为false
-      // if (target.has_value()) {
-      //   double v_yaw = target->ekf_x()[7];  // 获取目标的yaw速度
-      //   if (v_yaw > 0) {  // yaw速度为正表示向右走
-      //     final_fire = false;
-      //   }
-      // }
 
       {
         std::lock_guard<std::mutex> lock(plan_mutex);
         latest_plan = plan;
-        latest_plan.fire = final_fire;
-        latest_plan.yaw = send_yaw;  // 使用实际发送的 yaw
       }
 
-      gimbal.send(
-        plan.control, final_fire, send_yaw, plan.yaw_vel, plan.yaw_acc, plan.pitch, plan.pitch_vel,
-        plan.pitch_acc);
+      // 获取导航数据
+      float vx = ros2_publisher->get_nav_vx();
+      float vy = ros2_publisher->get_nav_vy();
+      uint8_t posture = ros2_publisher->get_nav_posture();
+
+      // 发送到云台
+      io::VisionToGimbal msg;
+      msg.mode = plan.control ? (plan.fire ? 2 : 1) : 0;
+      msg.yaw = plan.yaw;
+      msg.yaw_vel = plan.yaw_vel;
+      msg.yaw_acc = plan.yaw_acc;
+      msg.pitch = plan.pitch;
+      msg.pitch_vel = plan.pitch_vel;
+      msg.pitch_acc = plan.pitch_acc;
+      msg.vx = vx;
+      msg.vy = vy;
+      msg.posture = posture;
+      
+      gimbal.send(msg);
 
       auto fired = gs.bullet_count > last_bullet_count;
       last_bullet_count = gs.bullet_count;
@@ -501,12 +565,12 @@ int main(int argc, char * argv[])
       data["plan_pitch_vel"] = plan.pitch_vel;
       data["plan_pitch_acc"] = plan.pitch_acc;
 
-      data["fire"] = final_fire ? 1 : 0;
+      data["fire"] = plan.fire ? 1 : 0;
       data["fired"] = fired ? 1 : 0;
 
       if (target.has_value()) {
-        data["target_z"] = target->ekf_x()[4];   //z
-        data["target_vz"] = target->ekf_x()[5];  //vz
+        data["target_z"] = target->ekf_x()[4];
+        data["target_vz"] = target->ekf_x()[5];
       }
 
       if (target.has_value()) {
@@ -527,18 +591,16 @@ int main(int argc, char * argv[])
 
   while (!exiter.exit()) {
     camera.read(img, t);
-
+    
     // 图像旋转180度（如果相机安装方向颠倒）
     cv::rotate(img, img, cv::ROTATE_180);
-    
     auto q = gimbal.q(t);
     auto gs = gimbal.state();
     auto mode = gimbal.mode();
 
     solver.set_R_gimbal2world(q);
     
-    Eigen::Vector3d t_camera2world = solver.R_gimbal2world().transpose() * Eigen::Vector3d(0.145, 0, 0.07);
-    ros2_publisher->publish_tf(q, t_camera2world);
+    ros2_publisher->publish_tf(q);
     
     // 发布云台反馈消息
     uint8_t mode_value = 0;
@@ -550,14 +612,20 @@ int main(int argc, char * argv[])
     }
     ros2_publisher->publish_gimbal_feedback(gs, mode_value, q);
     
+    // 发布关节状态和哨兵状态消息
+    ros2_publisher->publish_joint_state(gs);
+    ros2_publisher->publish_sentry_status(gs);
+    
     auto armors = yolo.detect(img);
     auto targets = tracker.track(armors, t);
-    targets_queue.push(targets);
+    if (!targets.empty())
+      target_queue.push(targets.front());
+    else
+      target_queue.push(std::nullopt);
 
     if (!targets.empty()) {
       auto target = targets.front();
 
-      // 当前帧target更新后
       std::vector<Eigen::Vector4d> armor_xyza_list = target.armor_xyza_list();
       for (const Eigen::Vector4d & xyza : armor_xyza_list) {
         auto image_points =
@@ -624,3 +692,6 @@ int main(int argc, char * argv[])
 
   return 0;
 }
+
+// ls -la /dev/shm/fastrtps*
+// sudo rm -f /dev/shm/fastrtps*
