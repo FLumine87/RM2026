@@ -429,7 +429,7 @@ int main(int argc, char * argv[])
           
           // 根据角速度选择合适的延迟时间
           // double delay_time = std::abs(angular_velocity) > decision_speed ? high_speed_delay : low_speed_delay;
-          double delay_time =0.1
+          double delay_time =0.1;
           // 线性预测：基于旋转中心平移的yaw预测
           
           // 对目标进行预测，预测时间为总延迟
