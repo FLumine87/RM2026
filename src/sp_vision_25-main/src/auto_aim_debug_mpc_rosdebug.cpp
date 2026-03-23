@@ -22,6 +22,8 @@
 #include "tasks/auto_aim/solver.hpp"
 #include "tasks/auto_aim/tracker.hpp"
 #include "tasks/auto_aim/yolo.hpp"
+#include "tasks/auto_aim/aimer.hpp"
+#include "tasks/auto_aim/shooter.hpp"
 #include "tf2_msgs/msg/tf_message.hpp"
 #include "tools/exiter.hpp"
 #include "tools/img_tools.hpp"
@@ -374,12 +376,14 @@ int main(int argc, char * argv[])
   auto_aim::Solver solver(config_path);
   auto_aim::Tracker tracker(config_path, solver);
   auto_aim::Planner planner(config_path);
+  auto_aim::Aimer aimer(config_path);
+  auto_aim::Shooter shooter(config_path);
 
   std::mutex plan_mutex;
   auto_aim::Plan latest_plan = {};
 
-  tools::ThreadSafeQueue<std::optional<auto_aim::Target>, true> target_queue(1);
-  target_queue.push(std::nullopt);
+  tools::ThreadSafeQueue<std::list<auto_aim::Target>, true> targets_queue(1);
+  targets_queue.push({});
 
   std::atomic<bool> quit = false;
   std::thread ros2_spin_thread([&]() { rclcpp::spin(ros2_publisher); });
@@ -389,17 +393,32 @@ int main(int argc, char * argv[])
     uint16_t last_bullet_count = 0;
 
     while (!quit) {
-      auto target = target_queue.front();
+      auto targets = targets_queue.front();
       auto gs = gimbal.state();
+      
+      auto target = targets.empty() ? std::nullopt : std::optional<auto_aim::Target>(targets.front());
       auto plan = planner.plan(target, gs.bullet_speed);
+
+      io::Command command;
+      command.control = plan.control;
+      command.shoot = plan.fire;
+      command.yaw = plan.yaw;
+      command.pitch = plan.pitch;
+
+      Eigen::Vector3d gimbal_pos(gs.yaw, gs.pitch, 0.0);
+
+      bool shooter_fire = shooter.shoot(command, aimer, targets, gimbal_pos);
+
+      bool final_fire = plan.fire && shooter_fire;
 
       {
         std::lock_guard<std::mutex> lock(plan_mutex);
         latest_plan = plan;
+        latest_plan.fire = final_fire;
       }
 
       gimbal.send(
-        plan.control, plan.fire, plan.yaw, plan.yaw_vel, plan.yaw_acc, plan.pitch, plan.pitch_vel,
+        plan.control, final_fire, plan.yaw, plan.yaw_vel, plan.yaw_acc, plan.pitch, plan.pitch_vel,
         plan.pitch_acc);
 
       auto fired = gs.bullet_count > last_bullet_count;
@@ -424,7 +443,7 @@ int main(int argc, char * argv[])
       data["plan_pitch_vel"] = plan.pitch_vel;
       data["plan_pitch_acc"] = plan.pitch_acc;
 
-      data["fire"] = plan.fire ? 1 : 0;
+      data["fire"] = final_fire ? 1 : 0;
       data["fired"] = fired ? 1 : 0;
 
       if (target.has_value()) {
@@ -477,9 +496,9 @@ int main(int argc, char * argv[])
     auto armors = yolo.detect(img);
     auto targets = tracker.track(armors, t);
     if (!targets.empty())
-      target_queue.push(targets.front());
+      targets_queue.push(targets);
     else
-      target_queue.push(std::nullopt);
+      targets_queue.push({});
 
     if (!targets.empty()) {
       auto target = targets.front();
