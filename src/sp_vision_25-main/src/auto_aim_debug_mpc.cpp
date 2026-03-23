@@ -13,6 +13,8 @@
 #include "tasks/auto_aim/solver.hpp"
 #include "tasks/auto_aim/tracker.hpp"
 #include "tasks/auto_aim/yolo.hpp"
+#include "tasks/auto_aim/aimer.hpp"
+#include "tasks/auto_aim/shooter.hpp"
 #include "tools/exiter.hpp"
 #include "tools/img_tools.hpp"
 #include "tools/logger.hpp"
@@ -45,12 +47,14 @@ int main(int argc, char * argv[])
   auto_aim::Solver solver(config_path);
   auto_aim::Tracker tracker(config_path, solver);
   auto_aim::Planner planner(config_path);
+  auto_aim::Aimer aimer(config_path);
+  auto_aim::Shooter shooter(config_path);
 
   std::mutex plan_mutex;
   auto_aim::Plan latest_plan = {};
 
-  tools::ThreadSafeQueue<std::optional<auto_aim::Target>, true> target_queue(1);
-  target_queue.push(std::nullopt);
+  tools::ThreadSafeQueue<std::list<auto_aim::Target>, true> targets_queue(1);
+  targets_queue.push({});
 
   std::atomic<bool> quit = false;
   auto plan_thread = std::thread([&]() {
@@ -58,17 +62,74 @@ int main(int argc, char * argv[])
     uint16_t last_bullet_count = 0;
 
     while (!quit) {
-      auto target = target_queue.front();
+      auto targets = targets_queue.front();
       auto gs = gimbal.state();
+      
+      auto target = targets.empty() ? std::nullopt : std::optional<auto_aim::Target>(targets.front());
       auto plan = planner.plan(target, gs.bullet_speed);
+
+      io::Command command;
+      command.control = plan.control;
+      command.shoot = plan.fire;
+      command.yaw = plan.yaw;
+      command.pitch = plan.pitch;
+
+      Eigen::Vector3d gimbal_pos(gs.yaw, gs.pitch, 0.0);
+
+      bool shooter_fire = shooter.shoot(command, aimer, targets, gimbal_pos);
+
+      bool final_fire = plan.fire && shooter_fire;
+
+            // // 检查目标平移速度是否超过阈值
+      // bool velocity_threshold_check = true;
+      // if (target.has_value()) {
+      //   // 获取目标平移速度向量
+      //   double vx = target->ekf_x()[1];
+      //   double vy = target->ekf_x()[3];
+      //   double vz = target->ekf_x()[5];
+        
+      //   // 计算速度大小
+      //   double velocity_magnitude = std::sqrt(vx*vx + vy*vy + vz*vz);
+        
+      //   // 设置速度阈值（硬编码）
+      //   const double VELOCITY_THRESHOLD = 2.0; // 单位：m/s
+        
+      //   // 如果速度超过阈值，禁止开火
+      //   if (velocity_magnitude > VELOCITY_THRESHOLD) {
+      //     velocity_threshold_check = false;
+      //   }
+      // }
+
+      // bool final_fire = plan.fire && shooter_fire && velocity_threshold_check;
+      
+      // 检查目标yaw偏航角速度是否超过阈值（允许平移但不允许自旋转）
+      // bool yaw_velocity_threshold_check = true;
+      // if (target.has_value()) {
+      //   // 获取目标yaw角速度
+      //   double v_yaw = target->ekf_x()[7];
+        
+      //   // 计算角速度大小（取绝对值）
+      //   double yaw_velocity_magnitude = std::abs(v_yaw);
+        
+      //   // 设置yaw角速度阈值（硬编码）
+      //   const double YAW_VELOCITY_THRESHOLD = 0.5; // 单位：rad/s
+        
+      //   // 如果yaw角速度超过阈值，禁止开火
+      //   if (yaw_velocity_magnitude > YAW_VELOCITY_THRESHOLD) {
+      //     yaw_velocity_threshold_check = false;
+      //   }
+      // }
+
+      // bool final_fire = plan.fire && shooter_fire && yaw_velocity_threshold_check;
 
       {
         std::lock_guard<std::mutex> lock(plan_mutex);
         latest_plan = plan;
+        latest_plan.fire = final_fire;
       }
 
       gimbal.send(
-        plan.control, plan.fire, plan.yaw, plan.yaw_vel, plan.yaw_acc, plan.pitch, plan.pitch_vel,
+        plan.control, final_fire, plan.yaw, plan.yaw_vel, plan.yaw_acc, plan.pitch, plan.pitch_vel,
         plan.pitch_acc);
 
       auto fired = gs.bullet_count > last_bullet_count;
@@ -93,7 +154,7 @@ int main(int argc, char * argv[])
       data["plan_pitch_vel"] = plan.pitch_vel;
       data["plan_pitch_acc"] = plan.pitch_acc;
 
-      data["fire"] = plan.fire ? 1 : 0;
+      data["fire"] = final_fire ? 1 : 0;
       data["fired"] = fired ? 1 : 0;
 
       if (target.has_value()) {
@@ -124,9 +185,9 @@ int main(int argc, char * argv[])
     auto armors = yolo.detect(img);
     auto targets = tracker.track(armors, t);
     if (!targets.empty())
-      target_queue.push(targets.front());
+      targets_queue.push(targets);
     else
-      target_queue.push(std::nullopt);
+      targets_queue.push({});
 
     if (!targets.empty()) {
       auto target = targets.front();

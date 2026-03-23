@@ -411,6 +411,48 @@ int main(int argc, char * argv[])
 
       bool final_fire = plan.fire && shooter_fire;
 
+      // // 检查目标平移速度是否超过阈值
+      // bool velocity_threshold_check = true;
+      // if (target.has_value()) {
+      //   // 获取目标平移速度向量
+      //   double vx = target->ekf_x()[1];
+      //   double vy = target->ekf_x()[3];
+      //   double vz = target->ekf_x()[5];
+        
+      //   // 计算速度大小
+      //   double velocity_magnitude = std::sqrt(vx*vx + vy*vy + vz*vz);
+        
+      //   // 设置速度阈值（硬编码）
+      //   const double VELOCITY_THRESHOLD = 2.0; // 单位：m/s
+        
+      //   // 如果速度超过阈值，禁止开火
+      //   if (velocity_magnitude > VELOCITY_THRESHOLD) {
+      //     velocity_threshold_check = false;
+      //   }
+      // }
+
+      // bool final_fire = plan.fire && shooter_fire && velocity_threshold_check;
+      
+      // 检查目标yaw偏航角速度是否超过阈值（允许平移但不允许自旋转）
+      // bool yaw_velocity_threshold_check = true;
+      // if (target.has_value()) {
+      //   // 获取目标yaw角速度
+      //   double v_yaw = target->ekf_x()[7];
+        
+      //   // 计算角速度大小（取绝对值）
+      //   double yaw_velocity_magnitude = std::abs(v_yaw);
+        
+      //   // 设置yaw角速度阈值（硬编码）
+      //   const double YAW_VELOCITY_THRESHOLD = 0.5; // 单位：rad/s
+        
+      //   // 如果yaw角速度超过阈值，禁止开火
+      //   if (yaw_velocity_magnitude > YAW_VELOCITY_THRESHOLD) {
+      //     yaw_velocity_threshold_check = false;
+      //   }
+      // }
+
+      // bool final_fire = plan.fire && shooter_fire && yaw_velocity_threshold_check;
+
       {
         std::lock_guard<std::mutex> lock(plan_mutex);
         latest_plan = plan;
