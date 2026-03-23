@@ -47,21 +47,15 @@ find_package(geometry_msgs QUIET)
 find_package(tf2_msgs QUIET)
 find_package(visualization_msgs QUIET)
 
-# 如果找不到 ROS 环境，则跳过 ROS 相关的部分
-if(NOT ament_cmake_FOUND OR NOT rclcpp_FOUND OR NOT std_msgs_FOUND OR NOT rosidl_typesupport_cpp_FOUND)
+if(NOT ament_cmake_FOUND OR NOT rclcpp_FOUND OR NOT std_msgs_FOUND OR NOT rosidl_typesupport_cpp_FOUND OR NOT sp_msgs_FOUND)
     message(WARNING "ROS2 not found, skipping ROS2 specific code.")
 else()
-    # 找到 ROS2 环境
     message(STATUS "ROS2 environment found, compiling ROS2-related code.")
     
-    # 强制添加 auto_aim_interfaces 的包含路径（参考主 CMakeLists.txt）
-    include_directories("${CMAKE_CURRENT_SOURCE_DIR}/../../../install/auto_aim_interfaces/include")
-    include_directories("${CMAKE_CURRENT_SOURCE_DIR}/../../../install/auto_aim_interfaces/include/auto_aim_interfaces")
-    
-    # 添加基本 ROS2 依赖
+    # 添加 ROS2 相关的文件
+    target_sources(io PRIVATE ros2/publish2nav.cpp ros2/ros2.cpp ros2/subscribe2nav.cpp)
+
+    # 设置 ROS2 依赖
     include_directories(${std_msgs_INCLUDE_DIRS})
-    include_directories(${geometry_msgs_INCLUDE_DIRS})
-    include_directories(${tf2_msgs_INCLUDE_DIRS})
-    include_directories(${visualization_msgs_INCLUDE_DIRS})
-    ament_target_dependencies(io rclcpp std_msgs sp_msgs geometry_msgs tf2_msgs visualization_msgs)
+    ament_target_dependencies(io rclcpp std_msgs sp_msgs)
 endif()
