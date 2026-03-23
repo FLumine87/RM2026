@@ -85,18 +85,17 @@ Plan Planner::plan(Target target, double bullet_speed, double gimbal_delay)
   plan.pitch_vel = pitch_solver_->work->x(1, HALF_HORIZON);
   plan.pitch_acc = pitch_solver_->work->u(0, HALF_HORIZON);
 
-  // 计算开火偏移：gimbal_delay - fire_delay
+  // 计算开火偏移：目标已经预测到 T + gimbal_delay + fly_time
   // 开火指令需要在 T + gimbal_delay - fire_delay 时刻发送
-  double fire_offset_time = gimbal_delay - fire_delay_;
-  int shoot_offset = static_cast<int>(fire_offset_time / DT);
-  shoot_offset = std::max(0, shoot_offset);
-  shoot_offset = std::min(shoot_offset, HORIZON - HALF_HORIZON - 1);
+  // 相对于轨迹索引50的偏移 = -(fly_time + fire_delay) / DT
+  int fire_index = HALF_HORIZON - static_cast<int>((bullet_traj.fly_time + fire_delay_) / DT);
+  fire_index = std::max(0, std::min(fire_index, HORIZON - 1));
   
   plan.fire =
     std::hypot(
-      traj(0, HALF_HORIZON + shoot_offset) - yaw_solver_->work->x(0, HALF_HORIZON + shoot_offset),
-      traj(2, HALF_HORIZON + shoot_offset) - 
-        pitch_solver_->work->x(0, HALF_HORIZON + shoot_offset)) < fire_thresh_;
+      traj(0, fire_index) - yaw_solver_->work->x(0, fire_index),
+      traj(2, fire_index) - 
+        pitch_solver_->work->x(0, fire_index)) < fire_thresh_;
   return plan;
 }
 

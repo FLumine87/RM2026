@@ -537,8 +537,10 @@ int main(int argc, char * argv[])
 
     solver.set_R_gimbal2world(q);
     
-    Eigen::Vector3d t_camera2world = solver.R_gimbal2world().transpose() * Eigen::Vector3d(0.145, 0, 0.07);
-    ros2_publisher->publish_tf(q, t_camera2world);
+    // 使用单位矩阵作为旋转，共原点（平移为零）
+    Eigen::Quaterniond unit_quat(1, 0, 0, 0); // 单位四元数
+    Eigen::Vector3d zero_translation(0, 0, 0); // 零平移
+    ros2_publisher->publish_tf(unit_quat, zero_translation);
     
     // 发布云台反馈消息
     uint8_t mode_value = 0;
