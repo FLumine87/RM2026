@@ -27,12 +27,14 @@ struct __attribute__((packed)) GimbalToVision
   float pitch_vel;
   float bullet_speed;
   uint16_t bullet_count;  // 子弹累计发送次数
-  //导航
-  uint16_t timestamp;
-  uint16_t hp_;
-  uint16_t time_;
   uint8_t is_play;
-  uint16_t crc16;
+  uint16_t time_;        // 比赛时间
+  uint16_t enemy_score;   // 对方胜利点
+  uint16_t own_score;     // 己方分数
+  uint16_t own_hp_[3];       // 己方血量 0 哨兵 1 英雄 2 步兵
+  uint8_t occupy;
+  uint8_t reverse;
+  uint16_t crc16;        // 校验值
 };
 
 static_assert(sizeof(GimbalToVision) <= 64);
@@ -47,11 +49,12 @@ struct __attribute__((packed)) VisionToGimbal
   float pitch;
   float pitch_vel;
   float pitch_acc;
-  //导航
-  float vx;
-  float vy;
-  uint8_t posture; // 姿态指令， 0-移动， 1-防御， 2-进攻
-  uint16_t crc16;
+  float vx;              // X速度
+  float vy;              // Y速度
+  uint8_t posture;       // 姿态指令
+  uint8_t rotation_posture; // 转向姿态
+  uint8_t reverse;        // 预留位
+  uint16_t crc16;        // 校验值
 };
 
 static_assert(sizeof(VisionToGimbal) <= 64);
@@ -77,6 +80,12 @@ struct GimbalState
   uint16_t hp;
   uint16_t time;
   uint8_t is_play;
+  uint16_t enemy_score;
+  uint16_t own_score;
+  uint16_t own_hp[3];
+  uint8_t occupy;
+  uint8_t mode;
+  uint8_t reverse;
 };
 
 class Gimbal

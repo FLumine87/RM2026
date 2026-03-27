@@ -47,6 +47,26 @@ GimbalState Gimbal::state() const
   return state_;
 }
 
+GimbalToVision Gimbal::GetGimbalPackage() const
+{
+  std::lock_guard<std::mutex> lock(mutex_);
+  return rx_data_;
+}
+
+uint8_t Gimbal::GetFireMode() const
+{
+  return tx_data_.mode;
+}
+
+void Gimbal::SetGimbalPackage(VisionToGimbal recv_data)
+{
+  tx_data_.vx = recv_data.vx;
+  tx_data_.vy = recv_data.vy;
+  tx_data_.posture = recv_data.posture;
+  tx_data_.rotation_posture = recv_data.rotation_posture;
+  tx_data_.reverse = recv_data.reverse;
+}
+
 std::string Gimbal::str(GimbalMode mode) const
 {
   switch (mode) {
@@ -91,6 +111,8 @@ void Gimbal::send(io::VisionToGimbal VisionToGimbal)
   tx_data_.vx = VisionToGimbal.vx;
   tx_data_.vy = VisionToGimbal.vy;
   tx_data_.posture = VisionToGimbal.posture;
+  tx_data_.rotation_posture = VisionToGimbal.rotation_posture;
+  tx_data_.reverse = VisionToGimbal.reverse;
   tx_data_.crc16 = tools::get_crc16(
     reinterpret_cast<uint8_t *>(&tx_data_), sizeof(tx_data_) - sizeof(tx_data_.crc16));
 
@@ -179,10 +201,18 @@ void Gimbal::read_thread()
     state_.pitch_vel = rx_data_.pitch_vel;
     state_.bullet_speed = rx_data_.bullet_speed;
     state_.bullet_count = rx_data_.bullet_count;
-    state_.timestamp = rx_data_.timestamp;
-    state_.hp = rx_data_.hp_;
+    state_.timestamp = 0;
+    state_.hp = 0;
     state_.time = rx_data_.time_;
     state_.is_play = rx_data_.is_play;
+    state_.enemy_score = rx_data_.enemy_score;
+    state_.own_score = rx_data_.own_score;
+    for (int i = 0; i < 3; ++i) {
+      state_.own_hp[i] = rx_data_.own_hp_[i];
+    }
+    state_.occupy = rx_data_.occupy;
+    state_.mode = rx_data_.mode;
+    state_.reverse = rx_data_.reverse;
 
     switch (rx_data_.mode) {
       case 0:

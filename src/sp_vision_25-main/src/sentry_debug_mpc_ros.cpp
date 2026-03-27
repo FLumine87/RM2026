@@ -75,8 +75,10 @@ public:
     , sentry_status_pub_(this->create_publisher<auto_aim_interfaces::msg::SentryStatus>("/from_sentry", 10))
     , cmd_vel_sub_(this->create_subscription<geometry_msgs::msg::Twist>(
         "/cmd_vel", 10, std::bind(&ROS2Publisher::cmd_vel_callback, this, std::placeholders::_1)))
-    , posture_sub_(this->create_subscription<std_msgs::msg::UInt8>(
+  , posture_sub_(this->create_subscription<std_msgs::msg::UInt8>(
         "/posture_number", 10, std::bind(&ROS2Publisher::posture_callback, this, std::placeholders::_1)))
+  , rotation_posture_sub_(this->create_subscription<std_msgs::msg::UInt8>(
+        "/rotation_posture", 10, std::bind(&ROS2Publisher::rotation_posture_callback, this, std::placeholders::_1)))
   {
     auto yaml = YAML::LoadFile(config_path);
     
@@ -315,8 +317,16 @@ public:
     auto joint_state_msg = std::make_shared<auto_aim_interfaces::msg::JointState>();
     joint_state_msg->header.stamp = this->now();
     joint_state_msg->header.frame_id = "gimbal";
-    joint_state_msg->imu_yaw = state.yaw;
-    joint_state_msg->imu_pitch = state.pitch;
+    joint_state_msg->imu_yaw = 0.0;
+    joint_state_msg->imu_pitch = 0.0;
+    joint_state_msg->gimbal_pitch_joint = state.pitch;
+    joint_state_msg->gimbal_yaw_joint = state.yaw;
+    joint_state_msg->gimbal_pitch_odom_joint = 0.0;
+    joint_state_msg->gimbal_yaw_odom_joint = 0.0;
+    joint_state_msg->front_left_wheel_joint = 0.0;
+    joint_state_msg->front_right_wheel_joint = 0.0;
+    joint_state_msg->rear_left_wheel_joint = 0.0;
+    joint_state_msg->rear_right_wheel_joint = 0.0;
     
     joint_state_pub_->publish(*joint_state_msg);
   }
@@ -330,6 +340,14 @@ public:
     sentry_status_msg->hp = state.hp;
     sentry_status_msg->time = state.time;
     sentry_status_msg->is_play = state.is_play;
+    sentry_status_msg->enemy_score = state.enemy_score;
+    sentry_status_msg->own_score = state.own_score;
+    for (int i = 0; i < 3; ++i) {
+      sentry_status_msg->own_hp[i] = state.own_hp[i];
+    }
+    sentry_status_msg->occupy = state.occupy;
+    sentry_status_msg->mode = state.mode;
+    sentry_status_msg->reverse = state.reverse;
     
     sentry_status_pub_->publish(*sentry_status_msg);
   }
@@ -345,6 +363,12 @@ public:
   {
     std::lock_guard<std::mutex> lock(nav_mutex_);
     nav_posture_ = msg->data;
+  }
+
+  void rotation_posture_callback(const std_msgs::msg::UInt8::SharedPtr msg)
+  {
+    std::lock_guard<std::mutex> lock(nav_mutex_);
+    nav_rotation_posture_ = msg->data;
   }
 
   float get_nav_vx() const
@@ -363,6 +387,12 @@ public:
   {
     std::lock_guard<std::mutex> lock(nav_mutex_);
     return nav_posture_;
+  }
+
+  uint8_t get_nav_rotation_posture() const
+  {
+    std::lock_guard<std::mutex> lock(nav_mutex_);
+    return nav_rotation_posture_;
   }
 
   void publish_marker(
@@ -454,12 +484,14 @@ public:
   rclcpp::Publisher<auto_aim_interfaces::msg::SentryStatus>::SharedPtr sentry_status_pub_;
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub_;
   rclcpp::Subscription<std_msgs::msg::UInt8>::SharedPtr posture_sub_;
+  rclcpp::Subscription<std_msgs::msg::UInt8>::SharedPtr rotation_posture_sub_;
   
   // 导航相关变量
   mutable std::mutex nav_mutex_;
   float nav_vx_ = 0.0f;
   float nav_vy_ = 0.0f;
   uint8_t nav_posture_ = 0;
+  uint8_t nav_rotation_posture_ = 0;
 
   visualization_msgs::msg::Marker position_marker_;
   visualization_msgs::msg::Marker linear_v_marker_;
@@ -527,6 +559,7 @@ int main(int argc, char * argv[])
       float vx = ros2_publisher->get_nav_vx();
       float vy = ros2_publisher->get_nav_vy();
       uint8_t posture = ros2_publisher->get_nav_posture();
+      uint8_t rotation_posture = ros2_publisher->get_nav_rotation_posture();
 
       // 发送到云台
       io::VisionToGimbal msg;
@@ -540,6 +573,8 @@ int main(int argc, char * argv[])
       msg.vx = vx;
       msg.vy = vy;
       msg.posture = posture;
+      msg.rotation_posture = rotation_posture;
+      msg.reverse = 0;
       
       gimbal.send(msg);
 
