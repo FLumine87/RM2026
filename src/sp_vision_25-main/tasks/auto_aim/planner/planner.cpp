@@ -16,21 +16,24 @@ Planner::Planner(const std::string & config_path)
   yaw_offset_ = tools::read<double>(yaml, "yaw_offset") / 57.3;
   pitch_offset_ = tools::read<double>(yaml, "pitch_offset") / 57.3;
   fire_thresh_ = tools::read<double>(yaml, "fire_thresh");
+  convergence_thresh_ = tools::read<double>(yaml, "convergence_thresh");
   decision_speed_ = tools::read<double>(yaml, "decision_speed");
   high_speed_delay_time_ = tools::read<double>(yaml, "high_speed_delay_time");
   low_speed_delay_time_ = tools::read<double>(yaml, "low_speed_delay_time");
   fire_delay_ = tools::read<double>(yaml, "fire_delay");
+  slope_change_thresh_ = tools::read<double>(yaml, "slope_change_thresh");
+  mid_ratio_ = tools::read<double>(yaml, "mid_ratio");
 
   setup_yaw_solver(config_path);
   setup_pitch_solver(config_path);
 }
 
-Plan Planner::plan(Target target, double bullet_speed)
+Plan Planner::plan(Target target, double bullet_speed, double current_yaw, double current_pitch, double gimbal_delay)
 {
   // 0. Check bullet speed
-  if (bullet_speed < 10 || bullet_speed > 25) {
-    bullet_speed = 22;
-  }
+  // if (bullet_speed < 10 || bullet_speed > 25) {
+  //   bullet_speed = 22;
+  // }
 
   // 1. Predict fly_time
   Eigen::Vector3d xyz;
@@ -49,7 +52,8 @@ Plan Planner::plan(Target target, double bullet_speed)
   double yaw0;
   Trajectory traj;
   try {
-    yaw0 = aim(target, bullet_speed)(0);
+    int dummy_idx;
+    yaw0 = aim(target, bullet_speed, dummy_idx)(0);
     traj = get_trajectory(target, yaw0, bullet_speed);
   } catch (const std::exception & e) {
     tools::logger()->warn("Unsolvable target {:.2f}", bullet_speed);
@@ -86,15 +90,52 @@ Plan Planner::plan(Target target, double bullet_speed)
   plan.pitch_acc = pitch_solver_->work->u(0, HALF_HORIZON);
 
   int shoot_offset = static_cast<int>(fire_delay_ / DT);
-  plan.fire =
-    std::hypot(
+  bool trajectory_error = std::hypot(
       traj(0, shoot_offset) - yaw_solver_->work->x(0, shoot_offset),
       traj(2, shoot_offset) -
         pitch_solver_->work->x(0, shoot_offset)) < fire_thresh_;
+  
+  bool gimbal_converged = std::hypot(
+      current_yaw - traj(0, 0),
+      current_pitch - traj(2, 0)) < convergence_thresh_;
+  
+  // 确定shoot_offset所在的跟随段
+  int current_follow_start = 0;
+  int current_follow_end = HORIZON - 1;
+  bool found_switch_points = false;
+  
+  // 找到左边最近的切换点
+  for (int i = shoot_offset - 1; i >= 0; i--) {
+      if (switch_points_[i]) {
+          current_follow_start = i + 1;
+          found_switch_points = true;
+          break;
+      }
+  }
+  
+  // 找到右边最近的切换点
+  for (int i = shoot_offset + 1; i < HORIZON; i++) {
+      if (switch_points_[i]) {
+          current_follow_end = i - 1;
+          found_switch_points = true;
+          break;
+      }
+  }
+  
+  // 计算有效发射区域
+  bool in_valid_fire_region = true; // 默认允许发射
+  if (found_switch_points) {
+      int follow_length = current_follow_end - current_follow_start;
+      int mid_start = current_follow_start + follow_length * (1 - mid_ratio_) / 2;
+      int mid_end = current_follow_end - follow_length * (1 - mid_ratio_) / 2;
+      in_valid_fire_region = (shoot_offset >= mid_start && shoot_offset <= mid_end);
+  }
+  
+  plan.fire = trajectory_error && gimbal_converged && in_valid_fire_region;
   return plan;
 }
 
-Plan Planner::plan(std::optional<Target> target, double bullet_speed)
+Plan Planner::plan(std::optional<Target> target, double bullet_speed, double current_yaw, double current_pitch)
 {
   if (!target.has_value()) return {false};
 
@@ -105,7 +146,7 @@ Plan Planner::plan(std::optional<Target> target, double bullet_speed)
 
   target->predict(future);
 
-  return plan(*target, bullet_speed);
+  return plan(*target, bullet_speed, current_yaw, current_pitch);
 }
 
 void Planner::setup_yaw_solver(const std::string & config_path)
@@ -154,18 +195,21 @@ void Planner::setup_pitch_solver(const std::string & config_path)
   pitch_solver_->settings->max_iter = 10;
 }
 
-Eigen::Matrix<double, 2, 1> Planner::aim(const Target & target, double bullet_speed)
+Eigen::Matrix<double, 2, 1> Planner::aim(const Target & target, double bullet_speed, int & selected_armor_idx)
 {
   Eigen::Vector3d xyz;
   double yaw;
   auto min_dist = 1e10;
+  selected_armor_idx = 0;
 
-  for (auto & xyza : target.armor_xyza_list()) {
+  for (int i = 0; i < target.armor_xyza_list().size(); i++) {
+    const auto & xyza = target.armor_xyza_list()[i];
     auto dist = xyza.head<2>().norm();
     if (dist < min_dist) {
       min_dist = dist;
       xyz = xyza.head<3>();
       yaw = xyza[3];
+      selected_armor_idx = i;
     }
   }
   debug_xyza = Eigen::Vector4d(xyz.x(), xyz.y(), xyz.z(), yaw);
@@ -182,19 +226,32 @@ Trajectory Planner::get_trajectory(Target & target, double yaw0, double bullet_s
   Trajectory traj;
 
   target.predict(-DT * (HALF_HORIZON + 1));
-  auto yaw_pitch_last = aim(target, bullet_speed);
+  int last_selected_armor = 0;
+  auto yaw_pitch_last = aim(target, bullet_speed, last_selected_armor);
 
   target.predict(DT);  // [0] = -HALF_HORIZON * DT -> [HHALF_HORIZON] = 0
-  auto yaw_pitch = aim(target, bullet_speed);
+  int current_selected_armor = 0;
+  auto yaw_pitch = aim(target, bullet_speed, current_selected_armor);
+  
+  switch_points_.resize(HORIZON, 0);
 
   for (int i = 0; i < HORIZON; i++) {
     target.predict(DT);
-    auto yaw_pitch_next = aim(target, bullet_speed);
+    int next_selected_armor = 0;
+    auto yaw_pitch_next = aim(target, bullet_speed, next_selected_armor);
 
     auto yaw_vel = tools::limit_rad(yaw_pitch_next(0) - yaw_pitch_last(0)) / (2 * DT);
     auto pitch_vel = (yaw_pitch_next(1) - yaw_pitch_last(1)) / (2 * DT);
 
     traj.col(i) << tools::limit_rad(yaw_pitch(0) - yaw0), yaw_vel, yaw_pitch(1), pitch_vel;
+
+    // 检测装甲板切换点
+    if (next_selected_armor != current_selected_armor) {
+      switch_points_[i] = 1;
+    }
+    
+    last_selected_armor = current_selected_armor;
+    current_selected_armor = next_selected_armor;
 
     yaw_pitch_last = yaw_pitch;
     yaw_pitch = yaw_pitch_next;

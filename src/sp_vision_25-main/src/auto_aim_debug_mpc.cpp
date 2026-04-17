@@ -66,7 +66,7 @@ int main(int argc, char * argv[])
       auto gs = gimbal.state();
       
       auto target = targets.empty() ? std::nullopt : std::optional<auto_aim::Target>(targets.front());
-      auto plan = planner.plan(target, gs.bullet_speed);
+      auto plan = planner.plan(target, gs.bullet_speed, gs.yaw, gs.pitch);
 
       io::Command command;
       command.control = plan.control;

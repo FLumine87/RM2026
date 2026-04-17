@@ -36,9 +36,9 @@ public:
   Eigen::Vector4d debug_xyza;
   Planner(const std::string & config_path);
 
-  Plan plan(Target target, double bullet_speed);
-  Plan plan(Target target, double bullet_speed, double gimbal_delay);
-  Plan plan(std::optional<Target> target, double bullet_speed);
+  Plan plan(Target target, double bullet_speed, double current_yaw, double current_pitch);
+  Plan plan(Target target, double bullet_speed, double current_yaw, double current_pitch, double gimbal_delay);
+  Plan plan(std::optional<Target> target, double bullet_speed, double current_yaw, double current_pitch);
 
 private:
   double yaw_offset_;
@@ -46,6 +46,10 @@ private:
   double fire_thresh_;
   double low_speed_delay_time_, high_speed_delay_time_, decision_speed_;
   double fire_delay_;
+  double convergence_thresh_;
+  double slope_change_thresh_;
+  double mid_ratio_;
+  std::vector<char> switch_points_;
 
   TinySolver * yaw_solver_;
   TinySolver * pitch_solver_;
@@ -53,7 +57,7 @@ private:
   void setup_yaw_solver(const std::string & config_path);
   void setup_pitch_solver(const std::string & config_path);
 
-  Eigen::Matrix<double, 2, 1> aim(const Target & target, double bullet_speed);
+  Eigen::Matrix<double, 2, 1> aim(const Target & target, double bullet_speed, int & selected_armor_idx);
   Trajectory get_trajectory(Target & target, double yaw0, double bullet_speed);
 };
 

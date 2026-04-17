@@ -95,6 +95,9 @@ com_port: "/dev/gimbal"
 
 #####-----planner-----#####
 fire_thresh: 0.003
+convergence_thresh: 0.01
+slope_change_thresh: 0.1
+mid_ratio: 0.5
 
 max_yaw_acc: 50
 Q_yaw: [9e6, 0] # 5e6 ~ 1.5e7，0~1e6 ~ 5e6
