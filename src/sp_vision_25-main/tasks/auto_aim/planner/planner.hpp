@@ -37,7 +37,8 @@ public:
   Planner(const std::string & config_path);
 
   Plan plan(Target target, double bullet_speed, double current_yaw, double current_pitch);
-  Plan plan(Target target, double bullet_speed, double current_yaw, double current_pitch, double gimbal_delay);
+  Plan plan(Target target, double bullet_speed);
+  Plan plan(std::optional<Target> target, double bullet_speed);
   Plan plan(std::optional<Target> target, double bullet_speed, double current_yaw, double current_pitch);
 
 private:
@@ -50,6 +51,7 @@ private:
   double slope_change_thresh_;
   double mid_ratio_;
   std::vector<char> switch_points_;
+  bool skip_convergence_check_;
 
   TinySolver * yaw_solver_;
   TinySolver * pitch_solver_;

@@ -229,6 +229,8 @@ Eigen::VectorXd Target::ekf_x() const { return ekf_.x; }
 
 const tools::ExtendedKalmanFilter & Target::ekf() const { return ekf_; }
 
+void Target::set_ekf_x(const Eigen::VectorXd & x) { ekf_.x = x; }
+
 std::vector<Eigen::Vector4d> Target::armor_xyza_list() const
 {
   std::vector<Eigen::Vector4d> _armor_xyza_list;

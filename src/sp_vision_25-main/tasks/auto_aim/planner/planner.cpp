@@ -21,14 +21,14 @@ Planner::Planner(const std::string & config_path)
   high_speed_delay_time_ = tools::read<double>(yaml, "high_speed_delay_time");
   low_speed_delay_time_ = tools::read<double>(yaml, "low_speed_delay_time");
   fire_delay_ = tools::read<double>(yaml, "fire_delay");
-  slope_change_thresh_ = tools::read<double>(yaml, "slope_change_thresh");
   mid_ratio_ = tools::read<double>(yaml, "mid_ratio");
+  skip_convergence_check_ = false;
 
   setup_yaw_solver(config_path);
   setup_pitch_solver(config_path);
 }
 
-Plan Planner::plan(Target target, double bullet_speed, double current_yaw, double current_pitch, double gimbal_delay)
+Plan Planner::plan(Target target, double bullet_speed, double current_yaw, double current_pitch)
 {
   // 0. Check bullet speed
   // if (bullet_speed < 10 || bullet_speed > 25) {
@@ -95,9 +95,10 @@ Plan Planner::plan(Target target, double bullet_speed, double current_yaw, doubl
       traj(2, shoot_offset) -
         pitch_solver_->work->x(0, shoot_offset)) < fire_thresh_;
   
-  bool gimbal_converged = std::hypot(
-      current_yaw - traj(0, 0),
-      current_pitch - traj(2, 0)) < convergence_thresh_;
+  bool gimbal_converged = skip_convergence_check_ || (
+      std::hypot(
+          current_yaw - traj(0, 0),
+          current_pitch - traj(2, 0)) < convergence_thresh_);
   
   // 确定shoot_offset所在的跟随段
   int current_follow_start = 0;
@@ -135,6 +136,13 @@ Plan Planner::plan(Target target, double bullet_speed, double current_yaw, doubl
   return plan;
 }
 
+Plan Planner::plan(std::optional<Target> target, double bullet_speed)
+{
+  if (!target.has_value()) return {false};
+  skip_convergence_check_ = true;
+  return plan(*target, bullet_speed, 0.0, 0.0);
+}
+
 Plan Planner::plan(std::optional<Target> target, double bullet_speed, double current_yaw, double current_pitch)
 {
   if (!target.has_value()) return {false};
@@ -146,7 +154,14 @@ Plan Planner::plan(std::optional<Target> target, double bullet_speed, double cur
 
   target->predict(future);
 
+//  skip_convergence_check_ = false;
   return plan(*target, bullet_speed, current_yaw, current_pitch);
+}
+
+Plan Planner::plan(Target target, double bullet_speed)
+{
+  skip_convergence_check_ = true;
+  return plan(target, bullet_speed, 0.0, 0.0);
 }
 
 void Planner::setup_yaw_solver(const std::string & config_path)
@@ -240,10 +255,20 @@ Trajectory Planner::get_trajectory(Target & target, double yaw0, double bullet_s
     int next_selected_armor = 0;
     auto yaw_pitch_next = aim(target, bullet_speed, next_selected_armor);
 
-    auto yaw_vel = tools::limit_rad(yaw_pitch_next(0) - yaw_pitch_last(0)) / (2 * DT);
+    // 计算角度差时考虑连续性，避免角度跳变
+    double yaw_diff = yaw_pitch_next(0) - yaw_pitch_last(0);
+    if (yaw_diff > CV_PI) yaw_diff -= 2 * CV_PI;
+    if (yaw_diff < -CV_PI) yaw_diff += 2 * CV_PI;
+    auto yaw_vel = yaw_diff / (2 * DT);
+    
     auto pitch_vel = (yaw_pitch_next(1) - yaw_pitch_last(1)) / (2 * DT);
 
-    traj.col(i) << tools::limit_rad(yaw_pitch(0) - yaw0), yaw_vel, yaw_pitch(1), pitch_vel;
+    // 计算相对yaw时也考虑连续性
+    double relative_yaw = yaw_pitch(0) - yaw0;
+    if (relative_yaw > CV_PI) relative_yaw -= 2 * CV_PI;
+    if (relative_yaw < -CV_PI) relative_yaw += 2 * CV_PI;
+    
+    traj.col(i) << relative_yaw, yaw_vel, yaw_pitch(1), pitch_vel;
 
     // 检测装甲板切换点
     if (next_selected_armor != current_selected_armor) {

@@ -35,6 +35,7 @@ public:
 
   Eigen::VectorXd ekf_x() const;
   const tools::ExtendedKalmanFilter & ekf() const;
+  void set_ekf_x(const Eigen::VectorXd & x);
   std::vector<Eigen::Vector4d> armor_xyza_list() const;
 
   bool diverged() const;
