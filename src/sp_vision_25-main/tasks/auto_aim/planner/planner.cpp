@@ -285,4 +285,97 @@ Trajectory Planner::get_trajectory(Target & target, double yaw0, double bullet_s
   return traj;
 }
 
+PlanDebug Planner::debug(Target target, double bullet_speed)
+{
+  PlanDebug debug_result;
+  debug_result.control = true;
+
+  Eigen::Vector3d xyz;
+  auto min_dist = 1e10;
+  for (auto & xyza : target.armor_xyza_list()) {
+    auto dist = xyza.head<2>().norm();
+    if (dist < min_dist) {
+      min_dist = dist;
+      xyz = xyza.head<3>();
+    }
+  }
+  auto bullet_traj = tools::Trajectory(bullet_speed, min_dist, xyz.z());
+  target.predict(bullet_traj.fly_time);
+
+  double yaw0;
+  Trajectory traj;
+  try {
+    int dummy_idx;
+    yaw0 = aim(target, bullet_speed, dummy_idx)(0);
+    traj = get_trajectory(target, yaw0, bullet_speed);
+  } catch (const std::exception & e) {
+    tools::logger()->warn("Unsolvable target {:.2f}", bullet_speed);
+    debug_result.control = false;
+    return debug_result;
+  }
+
+  Eigen::VectorXd x0(2);
+  x0 << traj(0, 0), traj(1, 0);
+  tiny_set_x0(yaw_solver_, x0);
+
+  yaw_solver_->work->Xref = traj.block(0, 0, 2, HORIZON);
+  tiny_solve(yaw_solver_);
+
+  x0 << traj(2, 0), traj(3, 0);
+  tiny_set_x0(pitch_solver_, x0);
+
+  pitch_solver_->work->Xref = traj.block(2, 0, 2, HORIZON);
+  tiny_solve(pitch_solver_);
+
+  int shoot_offset = static_cast<int>(fire_delay_ / DT);
+
+  for (int i = 0; i < HORIZON; i++) {
+    double plan_yaw = tools::limit_rad(yaw_solver_->work->x(0, i) + yaw0);
+    double plan_pitch = pitch_solver_->work->x(0, i);
+    double target_yaw = tools::limit_rad(traj(0, i) + yaw0);
+    double target_pitch = traj(2, i);
+
+    debug_result.target_yaw_list.push_back(static_cast<float>(target_yaw));
+    debug_result.target_pitch_list.push_back(static_cast<float>(target_pitch));
+    debug_result.plan_yaw_list.push_back(static_cast<float>(plan_yaw));
+    debug_result.plan_pitch_list.push_back(static_cast<float>(plan_pitch));
+
+    bool trajectory_error = std::hypot(
+        traj(0, i) - yaw_solver_->work->x(0, i),
+        traj(2, i) - pitch_solver_->work->x(0, i)) < fire_thresh_;
+
+    int current_follow_start = 0;
+    int current_follow_end = HORIZON - 1;
+    bool found_switch_points = false;
+
+    for (int j = shoot_offset - 1; j >= 0; j--) {
+      if (switch_points_[j]) {
+        current_follow_start = j + 1;
+        found_switch_points = true;
+        break;
+      }
+    }
+
+    for (int j = shoot_offset + 1; j < HORIZON; j++) {
+      if (switch_points_[j]) {
+        current_follow_end = j - 1;
+        found_switch_points = true;
+        break;
+      }
+    }
+
+    bool in_valid_fire_region = true;
+    if (found_switch_points) {
+      int follow_length = current_follow_end - current_follow_start;
+      int mid_start = current_follow_start + follow_length * (1 - mid_ratio_) / 2;
+      int mid_end = current_follow_end - follow_length * (1 - mid_ratio_) / 2;
+      in_valid_fire_region = (i >= mid_start && i <= mid_end);
+    }
+
+    debug_result.fireable_list.push_back(trajectory_error && in_valid_fire_region);
+  }
+
+  return debug_result;
+}
+
 }  // namespace auto_aim

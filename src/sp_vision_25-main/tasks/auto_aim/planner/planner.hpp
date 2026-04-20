@@ -4,6 +4,7 @@
 #include <Eigen/Dense>
 #include <list>
 #include <optional>
+#include <vector>
 
 #include "tasks/auto_aim/target.hpp"
 #include "tinympc/tiny_api.hpp"
@@ -30,6 +31,16 @@ struct Plan
   float pitch_acc;
 };
 
+struct PlanDebug
+{
+  bool control;
+  std::vector<float> target_yaw_list;
+  std::vector<float> target_pitch_list;
+  std::vector<float> plan_yaw_list;
+  std::vector<float> plan_pitch_list;
+  std::vector<bool> fireable_list;
+};
+
 class Planner
 {
 public:
@@ -40,6 +51,8 @@ public:
   Plan plan(Target target, double bullet_speed);
   Plan plan(std::optional<Target> target, double bullet_speed);
   Plan plan(std::optional<Target> target, double bullet_speed, double current_yaw, double current_pitch);
+
+  PlanDebug debug(Target target, double bullet_speed);
 
 private:
   double yaw_offset_;

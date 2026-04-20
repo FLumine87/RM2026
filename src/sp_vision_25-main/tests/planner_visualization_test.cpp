@@ -50,33 +50,11 @@ int main(int argc, char * argv[])
 
   target.set_ekf_x(x);
 
-  // 生成轨迹数据
+  auto debug = planner.debug(target, 22.0);
+
   std::vector<double> time_points;
-  std::vector<double> target_yaw_list;
-  std::vector<double> plan_yaw_list;
-  std::vector<double> target_pitch_list;
-  std::vector<double> plan_pitch_list;
-  std::vector<bool> fireable_list;
-
-  // 生成1秒的轨迹数据，采样时间0.01秒
-  for (double t = 0; t <= 1.0; t += 0.01) {
-    time_points.push_back(t);
-
-    // 保存初始状态的副本，确保每次规划使用同一帧的状态
-    auto_aim::Target target_copy = target;
-    
-    // 预测目标状态到当前时间点
-    target_copy.predict(t);
-
-    // 生成规划（使用无收敛判断的接口）
-    auto plan = planner.plan(target_copy, 22.0);
-
-    // 保存数据
-    target_yaw_list.push_back(plan.target_yaw);
-    plan_yaw_list.push_back(plan.yaw);
-    target_pitch_list.push_back(plan.target_pitch);
-    plan_pitch_list.push_back(plan.pitch);
-    fireable_list.push_back(plan.fire);
+  for (int i = 0; i < HORIZON; i++) {
+    time_points.push_back(i * DT);
   }
 
   int width = 800;
@@ -92,18 +70,16 @@ int main(int argc, char * argv[])
   cv::line(image, cv::Point(margin, half_height + margin), cv::Point(margin, height - margin), cv::Scalar(0, 0, 0), 2);
   cv::line(image, cv::Point(margin, height - margin), cv::Point(width - margin, height - margin), cv::Scalar(0, 0, 0), 2);
 
-  // 计算数据范围
-  double min_yaw = *std::min_element(target_yaw_list.begin(), target_yaw_list.end());
-  double max_yaw = *std::max_element(target_yaw_list.begin(), target_yaw_list.end());
+  double min_yaw = *std::min_element(debug.target_yaw_list.begin(), debug.target_yaw_list.end());
+  double max_yaw = *std::max_element(debug.target_yaw_list.begin(), debug.target_yaw_list.end());
   double yaw_range = max_yaw - min_yaw;
   if (yaw_range < 0.01) yaw_range = 0.01;
 
-  // 绘制目标轨迹（蓝色）
-  for (size_t i = 1; i < target_yaw_list.size(); i++) {
+  for (int i = 1; i < HORIZON; i++) {
     double t1 = time_points[i-1];
     double t2 = time_points[i];
-    double y1 = target_yaw_list[i-1];
-    double y2 = target_yaw_list[i];
+    double y1 = debug.target_yaw_list[i-1];
+    double y2 = debug.target_yaw_list[i];
 
     int x1 = margin + (t1 / 1.0) * (width - 2 * margin);
     int x2 = margin + (t2 / 1.0) * (width - 2 * margin);
@@ -113,12 +89,11 @@ int main(int argc, char * argv[])
     cv::line(image, cv::Point(x1, y1_pixel), cv::Point(x2, y2_pixel), cv::Scalar(255, 0, 0), 2);
   }
 
-  // 绘制规划轨迹（红色）
-  for (size_t i = 1; i < plan_yaw_list.size(); i++) {
+  for (int i = 1; i < HORIZON; i++) {
     double t1 = time_points[i-1];
     double t2 = time_points[i];
-    double y1 = plan_yaw_list[i-1];
-    double y2 = plan_yaw_list[i];
+    double y1 = debug.plan_yaw_list[i-1];
+    double y2 = debug.plan_yaw_list[i];
 
     int x1 = margin + (t1 / 1.0) * (width - 2 * margin);
     int x2 = margin + (t2 / 1.0) * (width - 2 * margin);
@@ -128,24 +103,24 @@ int main(int argc, char * argv[])
     cv::line(image, cv::Point(x1, y1_pixel), cv::Point(x2, y2_pixel), cv::Scalar(0, 0, 255), 2);
   }
 
-  for (size_t i = 0; i < plan_yaw_list.size(); i++) {
-    if (fireable_list[i]) {
+  for (int i = 0; i < HORIZON; i++) {
+    if (debug.fireable_list[i]) {
       int x_pixel = margin + (time_points[i] / 1.0) * (width - 2 * margin);
-      int y_pixel = half_height - margin - ((plan_yaw_list[i] - min_yaw) / yaw_range) * (half_height - 2 * margin);
+      int y_pixel = half_height - margin - ((debug.plan_yaw_list[i] - min_yaw) / yaw_range) * (half_height - 2 * margin);
       cv::circle(image, cv::Point(x_pixel, y_pixel), 5, cv::Scalar(0, 255, 0), -1);
     }
   }
 
-  double min_pitch = *std::min_element(target_pitch_list.begin(), target_pitch_list.end());
-  double max_pitch = *std::max_element(target_pitch_list.begin(), target_pitch_list.end());
+  double min_pitch = *std::min_element(debug.target_pitch_list.begin(), debug.target_pitch_list.end());
+  double max_pitch = *std::max_element(debug.target_pitch_list.begin(), debug.target_pitch_list.end());
   double pitch_range = max_pitch - min_pitch;
   if (pitch_range < 0.01) pitch_range = 0.01;
 
-  for (size_t i = 1; i < target_pitch_list.size(); i++) {
+  for (int i = 1; i < HORIZON; i++) {
     double t1 = time_points[i-1];
     double t2 = time_points[i];
-    double y1 = target_pitch_list[i-1];
-    double y2 = target_pitch_list[i];
+    double y1 = debug.target_pitch_list[i-1];
+    double y2 = debug.target_pitch_list[i];
 
     int x1 = margin + (t1 / 1.0) * (width - 2 * margin);
     int x2 = margin + (t2 / 1.0) * (width - 2 * margin);
@@ -155,11 +130,11 @@ int main(int argc, char * argv[])
     cv::line(image, cv::Point(x1, y1_pixel), cv::Point(x2, y2_pixel), cv::Scalar(255, 0, 0), 2);
   }
 
-  for (size_t i = 1; i < plan_pitch_list.size(); i++) {
+  for (int i = 1; i < HORIZON; i++) {
     double t1 = time_points[i-1];
     double t2 = time_points[i];
-    double y1 = plan_pitch_list[i-1];
-    double y2 = plan_pitch_list[i];
+    double y1 = debug.plan_pitch_list[i-1];
+    double y2 = debug.plan_pitch_list[i];
 
     int x1 = margin + (t1 / 1.0) * (width - 2 * margin);
     int x2 = margin + (t2 / 1.0) * (width - 2 * margin);
@@ -169,10 +144,10 @@ int main(int argc, char * argv[])
     cv::line(image, cv::Point(x1, y1_pixel), cv::Point(x2, y2_pixel), cv::Scalar(0, 0, 255), 2);
   }
 
-  for (size_t i = 0; i < plan_pitch_list.size(); i++) {
-    if (fireable_list[i]) {
+  for (int i = 0; i < HORIZON; i++) {
+    if (debug.fireable_list[i]) {
       int x_pixel = margin + (time_points[i] / 1.0) * (width - 2 * margin);
-      int y_pixel = height - margin - ((plan_pitch_list[i] - min_pitch) / pitch_range) * (half_height - 2 * margin);
+      int y_pixel = height - margin - ((debug.plan_pitch_list[i] - min_pitch) / pitch_range) * (half_height - 2 * margin);
       cv::circle(image, cv::Point(x_pixel, y_pixel), 5, cv::Scalar(0, 255, 0), -1);
     }
   }
