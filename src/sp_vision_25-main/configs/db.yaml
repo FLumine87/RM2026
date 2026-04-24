@@ -94,17 +94,17 @@ can_interface: "can0"
 com_port: "/dev/gimbal"
 
 #####-----planner-----#####
-fire_thresh: 0.003
-convergence_thresh: 0.01
-mid_ratio: 0.5
+fire_thresh: 0.02
+convergence_thresh: 0.1
+mid_ratio: 0.4
 
-max_yaw_acc: 50
-Q_yaw: [9e6, 0] # 5e6 ~ 1.5e7，0~1e6 ~ 5e6
-R_yaw: [1] # 0.1 ~ 10
+max_yaw_acc: 50 #20~100
+Q_yaw: [1e9, 1e6]
+R_yaw: [400] # 100~900 , 300,400
 
-max_pitch_acc: 100
-Q_pitch: [9e6,0]
-R_pitch: [1]
+max_pitch_acc: 100 #无法调整，电控端加梯度
+Q_pitch: [9e6,1e6]
+R_pitch: [1] 
 
 #####-----buff_detector参数-----#####
 model: "assets/yolo11_buff_int8.xml"
