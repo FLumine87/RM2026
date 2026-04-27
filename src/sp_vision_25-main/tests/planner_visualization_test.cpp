@@ -53,8 +53,8 @@ int main(int argc, char * argv[])
   auto debug = planner.debug(target, 22.0);
 
   std::vector<double> time_points;
-  for (int i = 0; i < HORIZON; i++) {
-    time_points.push_back(i * DT);
+  for (int i = 0; i < auto_aim::HORIZON; i++) {
+    time_points.push_back(i * auto_aim::DT);
   }
 
   int width = 800;
@@ -75,7 +75,7 @@ int main(int argc, char * argv[])
   double yaw_range = max_yaw - min_yaw;
   if (yaw_range < 0.01) yaw_range = 0.01;
 
-  for (int i = 1; i < HORIZON; i++) {
+  for (int i = 1; i < auto_aim::HORIZON; i++) {
     double t1 = time_points[i-1];
     double t2 = time_points[i];
     double y1 = debug.target_yaw_list[i-1];
@@ -89,7 +89,7 @@ int main(int argc, char * argv[])
     cv::line(image, cv::Point(x1, y1_pixel), cv::Point(x2, y2_pixel), cv::Scalar(255, 0, 0), 2);
   }
 
-  for (int i = 1; i < HORIZON; i++) {
+  for (int i = 1; i < auto_aim::HORIZON; i++) {
     double t1 = time_points[i-1];
     double t2 = time_points[i];
     double y1 = debug.plan_yaw_list[i-1];
@@ -103,7 +103,7 @@ int main(int argc, char * argv[])
     cv::line(image, cv::Point(x1, y1_pixel), cv::Point(x2, y2_pixel), cv::Scalar(0, 0, 255), 2);
   }
 
-  for (int i = 0; i < HORIZON; i++) {
+  for (int i = 0; i < auto_aim::HORIZON; i++) {
     if (debug.fireable_list[i]) {
       int x_pixel = margin + (time_points[i] / 1.0) * (width - 2 * margin);
       int y_pixel = half_height - margin - ((debug.plan_yaw_list[i] - min_yaw) / yaw_range) * (half_height - 2 * margin);
@@ -116,7 +116,7 @@ int main(int argc, char * argv[])
   double pitch_range = max_pitch - min_pitch;
   if (pitch_range < 0.01) pitch_range = 0.01;
 
-  for (int i = 1; i < HORIZON; i++) {
+  for (int i = 1; i < auto_aim::HORIZON; i++) {
     double t1 = time_points[i-1];
     double t2 = time_points[i];
     double y1 = debug.target_pitch_list[i-1];
@@ -130,7 +130,7 @@ int main(int argc, char * argv[])
     cv::line(image, cv::Point(x1, y1_pixel), cv::Point(x2, y2_pixel), cv::Scalar(255, 0, 0), 2);
   }
 
-  for (int i = 1; i < HORIZON; i++) {
+  for (int i = 1; i < auto_aim::HORIZON; i++) {
     double t1 = time_points[i-1];
     double t2 = time_points[i];
     double y1 = debug.plan_pitch_list[i-1];
@@ -144,7 +144,7 @@ int main(int argc, char * argv[])
     cv::line(image, cv::Point(x1, y1_pixel), cv::Point(x2, y2_pixel), cv::Scalar(0, 0, 255), 2);
   }
 
-  for (int i = 0; i < HORIZON; i++) {
+  for (int i = 0; i < auto_aim::HORIZON; i++) {
     if (debug.fireable_list[i]) {
       int x_pixel = margin + (time_points[i] / 1.0) * (width - 2 * margin);
       int y_pixel = height - margin - ((debug.plan_pitch_list[i] - min_pitch) / pitch_range) * (half_height - 2 * margin);
