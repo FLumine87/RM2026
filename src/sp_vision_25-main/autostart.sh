@@ -2,9 +2,8 @@
 
 sleep 5
 cd ~/sp_vision_25-main/
-screen \
-    -L \
-    -Logfile logs/$(date "+%Y-%m-%d_%H-%M-%S").screenlog \
-    -d \
-    -m \
-    bash -c "./watchdog.sh"
+
+# 使用 xterm 打开终端窗口运行 watchdog
+# -hold 保持终端窗口不关闭
+# -e 指定要执行的命令
+xterm -hold -e "bash watchdog.sh"
