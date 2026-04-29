@@ -38,8 +38,8 @@ max_temp_lost_count: 15
 outpost_max_temp_lost_count: 75
 
 #####-----aimer参数-----#####
-yaw_offset: -2 # degree -2.5
-pitch_offset: -0.3 # degree 2
+yaw_offset: 0.5 # degree -2.5
+pitch_offset: -1.3 # degree 2
 comming_angle: 60 # degree
 leaving_angle: 20 # degree
 decision_speed: 8 # rad/s
@@ -52,10 +52,11 @@ first_tolerance: 3 # 近距离射击容差，degree
 second_tolerance: 1.5 # 远距离射击容差，degree
 judge_distance: 2 #距离判断阈值
 auto_fire: true # 是否由自瞄控制射击
+max_fire_yaw_angle: 5 # 允许开火的最大装甲板偏航角，degree
 
 camera_name: "hikrobot"
 exposure_ms: 1
-gain: 17
+gain: 16.8
 vid_pid: "2bdf:0001"
 
 #  1  0  0

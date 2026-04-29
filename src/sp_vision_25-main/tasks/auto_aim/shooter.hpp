@@ -15,7 +15,8 @@ public:
 
   bool shoot(
     const io::Command & command, const auto_aim::Aimer & aimer,
-    const std::list<auto_aim::Target> & targets, const Eigen::Vector3d & gimbal_pos);
+    const std::list<auto_aim::Target> & targets, const Eigen::Vector3d & gimbal_pos,
+    double bullet_speed = 22);
 
 private:
   io::Command last_command_;
@@ -23,6 +24,7 @@ private:
   double first_tolerance_;
   double second_tolerance_;
   bool auto_fire_;
+  double max_fire_yaw_angle_;
 };
 }  // namespace auto_aim
 

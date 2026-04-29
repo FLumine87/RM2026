@@ -76,7 +76,7 @@ int main(int argc, char * argv[])
 
       Eigen::Vector3d gimbal_pos(gs.yaw, gs.pitch, 0.0);
 
-      bool shooter_fire = shooter.shoot(command, aimer, targets, gimbal_pos);
+      bool shooter_fire = shooter.shoot(command, aimer, targets, gimbal_pos, gs.bullet_speed);
 
       bool final_fire = plan.fire && shooter_fire;
 
