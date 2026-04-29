@@ -98,6 +98,9 @@ public:
   GimbalMode mode() const;
   GimbalState state() const;
   std::string str(GimbalMode mode) const;
+  GimbalToVision GetGimbalPackage() const;
+  uint8_t GetFireMode() const;
+  void SetGimbalPackage(VisionToGimbal recv_data);
   Eigen::Quaterniond q(std::chrono::steady_clock::time_point t);
 
   void send(

@@ -1,0 +1,2 @@
+uint8 posture
+uint8 rotation_posture

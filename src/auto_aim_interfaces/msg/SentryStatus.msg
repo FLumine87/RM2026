@@ -1,8 +1,5 @@
-std_msgs/Header header
-uint16 timestamp
-uint16 hp
-uint16 time
 uint8 is_play
+uint16 time
 uint16 enemy_score
 uint16 own_score
 uint16[3] own_hp
