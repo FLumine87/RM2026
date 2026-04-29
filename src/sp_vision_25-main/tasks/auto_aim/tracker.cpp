@@ -42,12 +42,12 @@ std::list<Target> Tracker::track(
   // 过滤掉非我方装甲板
   armors.remove_if([&](const auto_aim::Armor & a) { return a.color != enemy_color_; });
 
-  // 过滤前哨站顶部装甲板
-  // armors.remove_if([this](const auto_aim::Armor & a) {
-  //   return a.name == ArmorName::outpost &&
-  //          solver_.oupost_reprojection_error(a, 27.5 * CV_PI / 180.0) <
-  //            solver_.oupost_reprojection_error(a, -15 * CV_PI / 180.0);
-  // });
+  // 过滤前哨站顶部装甲板，避免顶板/侧板观测混用造成ID重排
+  armors.remove_if([this](const auto_aim::Armor & a) {
+    return a.name == ArmorName::outpost &&
+           solver_.oupost_reprojection_error(a, 27.5 * CV_PI / 180.0) <
+             solver_.oupost_reprojection_error(a, -15 * CV_PI / 180.0);
+  });
 
   // 优先选择靠近图像中心的装甲板
   armors.sort([](const Armor & a, const Armor & b) {
@@ -113,6 +113,13 @@ std::tuple<omniperception::DetectionResult, std::list<Target>> Tracker::track(
     tools::logger()->warn("[Tracker] Large dt: {:.3f}s", dt);
     state_ = "lost";
   }
+
+  // 过滤前哨站顶部装甲板，避免顶板/侧板观测混用造成ID重排
+  armors.remove_if([this](const auto_aim::Armor & a) {
+    return a.name == ArmorName::outpost &&
+           solver_.oupost_reprojection_error(a, 27.5 * CV_PI / 180.0) <
+             solver_.oupost_reprojection_error(a, -15 * CV_PI / 180.0);
+  });
 
   // 优先选择靠近图像中心的装甲板
   armors.sort([](const Armor & a, const Armor & b) {
@@ -246,7 +253,7 @@ bool Tracker::set_target(std::list<Armor> & armors, std::chrono::steady_clock::t
   }
 
   else if (armor.name == ArmorName::outpost) {
-    Eigen::VectorXd P0_dig{{1, 64, 1, 64, 1, 81, 0.4, 100, 1e-4, 0, 0}};
+    Eigen::VectorXd P0_dig{{1, 64, 1, 64, 0.4, 81, 0.4, 100, 1e-4, 0.1, 0.1}};
     target_ = Target(armor, t, 0.2765, 3, P0_dig);
   }
 

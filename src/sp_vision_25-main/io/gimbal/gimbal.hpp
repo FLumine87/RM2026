@@ -106,6 +106,10 @@ public:
 
   void send(io::VisionToGimbal VisionToGimbal);
 
+  GimbalToVision GetGimbalPackage() const;
+  uint8_t GetFireMode() const;
+  void SetGimbalPackage(VisionToGimbal recv_data);
+
 private:
   serial::Serial serial_;
 
