@@ -197,30 +197,30 @@
 //   tools::logger()->info("[Gimbal] read_thread stopped.");
 // }
 
-void Gimbal::reconnect()
-{
-  int max_retry_count = 10;
-  for (int i = 0; i < max_retry_count && !quit_; ++i) {
-    tools::logger()->warn("[Gimbal] Reconnecting serial, attempt {}/{}...", i + 1, max_retry_count);
-    try {
-      serial_.close();
-      std::this_thread::sleep_for(std::chrono::seconds(1));
-    } catch (...) {
-    }
+// void Gimbal::reconnect()
+// {
+//   int max_retry_count = 10;
+//   for (int i = 0; i < max_retry_count && !quit_; ++i) {
+//     tools::logger()->warn("[Gimbal] Reconnecting serial, attempt {}/{}...", i + 1, max_retry_count);
+//     try {
+//       serial_.close();
+//       std::this_thread::sleep_for(std::chrono::seconds(1));
+//     } catch (...) {
+//     }
 
-    try {
-      serial_.open();  // 尝试重新打开
-      queue_.clear();
-      tools::logger()->info("[Gimbal] Reconnected serial successfully.");
-      break;
-    } catch (const std::exception & e) {
-      tools::logger()->warn("[Gimbal] Reconnect failed: {}", e.what());
-      std::this_thread::sleep_for(std::chrono::seconds(1));
-    }
-  }
-}
+//     try {
+//       serial_.open();  // 尝试重新打开
+//       queue_.clear();
+//       tools::logger()->info("[Gimbal] Reconnected serial successfully.");
+//       break;
+//     } catch (const std::exception & e) {
+//       tools::logger()->warn("[Gimbal] Reconnect failed: {}", e.what());
+//       std::this_thread::sleep_for(std::chrono::seconds(1));
+//     }
+//   }
+// }
 
-}  // namespace io
+// }  // namespace io
 
 #include "gimbal.hpp"
 
