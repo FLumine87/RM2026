@@ -555,7 +555,7 @@ int main(int argc, char * argv[])
   io::Gimbal gimbal(config_path);
   io::Camera camera(config_path);
 
-  auto_aim::YOLO yolo(config_path, false);
+  auto_aim::YOLO yolo(config_path, true);
   auto_aim::Solver solver(config_path);
   auto_aim::Tracker tracker(config_path, solver);
   auto_aim::Planner planner(config_path);
@@ -746,10 +746,10 @@ int main(int argc, char * argv[])
 
     ros2_publisher->publish_image(img, "camera/image_raw");
 
-    // cv::resize(img, img, {}, 0.5, 0.5);  // 显示时缩小图片尺寸
-    // cv::imshow("reprojection", img);
-    // auto key = cv::waitKey(1);
-    // if (key == 'q') break;
+    cv::resize(img, img, {}, 0.5, 0.5);  // 显示时缩小图片尺寸
+    cv::imshow("reprojection", img);
+    auto key = cv::waitKey(1);
+    if (key == 'q') break;
   }
 
   quit = true;
