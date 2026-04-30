@@ -129,16 +129,16 @@ Plan Planner::plan(Target target, double bullet_speed, double current_yaw, doubl
   int gimbal_idx = HALF_HORIZON;
 
   // 原点状态（用于收敛检测）
-  State origin_yaw_state = get_state_at(0, shoot_traj_);
-  State origin_pitch_state = {shoot_traj_(2, 0), shoot_traj_(3, 0), 0};
+  State origin_yaw_state = get_yaw_state_at(0, shoot_traj_);
+  State origin_pitch_state = get_pitch_state_at(0, shoot_traj_);
 
   // fire_delay时刻状态（用于开火判断）
-  State fire_yaw_state = get_state_at(fire_idx, shoot_traj_);
-  State fire_pitch_state = get_state_at(fire_idx, shoot_traj_);
+  State fire_yaw_state = get_yaw_state_at(fire_idx, shoot_traj_);
+  State fire_pitch_state = get_pitch_state_at(fire_idx, shoot_traj_);
 
   // gimbal_delay时刻状态（用于发送指令）
-  State gimbal_yaw_state = get_state_at(gimbal_idx, shoot_traj_);
-  State gimbal_pitch_state = get_state_at(gimbal_idx, shoot_traj_);
+  State gimbal_yaw_state = get_yaw_state_at(gimbal_idx, shoot_traj_);
+  State gimbal_pitch_state = get_pitch_state_at(gimbal_idx, shoot_traj_);
 
   // 5. 填充plan
   Plan plan;
@@ -202,27 +202,27 @@ Plan Planner::plan(Target target, double bullet_speed)
 void Planner::precompute_switch_info(Target& target) {
     switch_info_list_.clear();
     
-    double omega = std::abs(target.ekf_x()[7]);
-    
     for (int i = 0; i < HORIZON; i++) {
         if (switch_points_[i]) {
             SwitchInfo info;
             info.idx = i;
             
-            // 计算最小过渡时间（基于动力学约束）
-            double delta_vel = omega;  // 角速度变化量
-            double min_T = delta_vel / max_yaw_acc_;
+            // 确定过渡段范围：在切换点前后各取若干步
+            int transition_steps = static_cast<int>(0.1 / DT);  // 默认过渡时间约0.1秒
+            int half_steps = transition_steps / 2;
             
-            // 根据 transition_ratio 调整过渡时间
-            double T = min_T * (1 + transition_ratio_);
+            // 根据 transition_ratio 调整过渡段长度
+            // transition_ratio=0: 最小过渡段(2步), transition_ratio=1: 最大过渡段
+            int min_steps = 2;
+            int max_steps = static_cast<int>(0.2 / DT);
+            transition_steps = min_steps + static_cast<int>(transition_ratio_ * (max_steps - min_steps));
+            half_steps = transition_steps / 2;
             
-            // 计算过渡段起点和终点（对称设计）
-            int half_steps = static_cast<int>(T / 2 / DT);
             info.start_idx = std::max(0, i - half_steps);
             info.end_idx = std::min(HORIZON - 1, i + half_steps);
             info.T = (info.end_idx - info.start_idx) * DT;
             
-            // 获取边界状态
+            // 获取边界状态（使用原始轨迹值）
             double start_yaw = shoot_traj_(0, info.start_idx);
             double start_yaw_vel = shoot_traj_(1, info.start_idx);
             double end_yaw = shoot_traj_(0, info.end_idx);
@@ -233,19 +233,27 @@ void Planner::precompute_switch_info(Target& target) {
             double end_pitch = shoot_traj_(2, info.end_idx);
             double end_pitch_vel = shoot_traj_(3, info.end_idx);
             
-            // 求解五次多项式
+            // 求解五次多项式（确保位置、速度连续，加速度从0开始和结束）
             info.yaw_poly.solve(start_yaw, start_yaw_vel, 0, end_yaw, end_yaw_vel, 0, info.T);
             info.pitch_poly.solve(start_pitch, start_pitch_vel, 0, end_pitch, end_pitch_vel, 0, info.T);
             
             // 检查并调整过渡时间（满足动力学约束）
             double max_yaw_acc = info.yaw_poly.max_acc(info.T);
-            while (max_yaw_acc > max_yaw_acc_ && info.end_idx < HORIZON - 1) {
+            double max_pitch_acc = info.pitch_poly.max_acc(info.T);
+            
+            while ((max_yaw_acc > max_yaw_acc_ || max_pitch_acc > max_pitch_acc_) && info.end_idx < HORIZON - 1) {
                 info.end_idx++;
                 info.T = (info.end_idx - info.start_idx) * DT;
                 end_yaw = shoot_traj_(0, info.end_idx);
                 end_yaw_vel = shoot_traj_(1, info.end_idx);
+                end_pitch = shoot_traj_(2, info.end_idx);
+                end_pitch_vel = shoot_traj_(3, info.end_idx);
+                
                 info.yaw_poly.solve(start_yaw, start_yaw_vel, 0, end_yaw, end_yaw_vel, 0, info.T);
+                info.pitch_poly.solve(start_pitch, start_pitch_vel, 0, end_pitch, end_pitch_vel, 0, info.T);
+                
                 max_yaw_acc = info.yaw_poly.max_acc(info.T);
+                max_pitch_acc = info.pitch_poly.max_acc(info.T);
             }
             
             switch_info_list_.push_back(info);
@@ -253,7 +261,7 @@ void Planner::precompute_switch_info(Target& target) {
     }
 }
 
-State Planner::get_state_at(int idx, const Trajectory& traj) {
+State Planner::get_yaw_state_at(int idx, const Trajectory& traj) {
     // 检查是否在过渡段内
     for (const auto& info : switch_info_list_) {
         if (idx >= info.start_idx && idx <= info.end_idx) {
@@ -275,35 +283,70 @@ State Planner::get_state_at(int idx, const Trajectory& traj) {
     return {traj(0, idx), traj(1, idx), acc};
 }
 
+State Planner::get_pitch_state_at(int idx, const Trajectory& traj) {
+    // 检查是否在过渡段内
+    for (const auto& info : switch_info_list_) {
+        if (idx >= info.start_idx && idx <= info.end_idx) {
+            double t_local = (idx - info.start_idx) * DT;
+            return {
+                info.pitch_poly.pos(t_local),
+                info.pitch_poly.vel(t_local),
+                info.pitch_poly.acc(t_local)
+            };
+        }
+    }
+    
+    // 不在过渡段，直接返回原始轨迹
+    double acc = 0;
+    if (idx > 0 && idx < HORIZON - 1) {
+        acc = (traj(3, idx) - traj(3, idx - 1)) / DT;
+    }
+    
+    return {traj(2, idx), traj(3, idx), acc};
+}
+
 bool Planner::is_in_valid_fire_region(int shoot_offset) {
+    // 检查是否在过渡段内（过渡段内不允许开火）
+    for (const auto& info : switch_info_list_) {
+        if (shoot_offset >= info.start_idx && shoot_offset <= info.end_idx) {
+            return false;  // 在过渡段内，不允许开火
+        }
+    }
+    
+    // 如果没有切换点，允许开火
+    if (switch_info_list_.empty()) {
+        return true;
+    }
+    
+    // 找到当前时刻所在的跟随段
     int current_follow_start = 0;
     int current_follow_end = HORIZON - 1;
-    bool found_switch_points = false;
     
-    for (int i = shoot_offset - 1; i >= 0; i--) {
-        if (switch_points_[i]) {
-            current_follow_start = i + 1;
-            found_switch_points = true;
-            break;
+    // 找到前一个切换点的结束位置
+    for (const auto& info : switch_info_list_) {
+        if (info.end_idx < shoot_offset) {
+            current_follow_start = info.end_idx + 1;
         }
     }
     
-    for (int i = shoot_offset + 1; i < HORIZON; i++) {
-        if (switch_points_[i]) {
-            current_follow_end = i - 1;
-            found_switch_points = true;
-            break;
+    // 找到后一个切换点的开始位置
+    for (auto it = switch_info_list_.rbegin(); it != switch_info_list_.rend(); ++it) {
+        if (it->start_idx > shoot_offset) {
+            current_follow_end = it->start_idx - 1;
         }
     }
     
-    if (found_switch_points) {
-        int follow_length = current_follow_end - current_follow_start;
-        int mid_start = current_follow_start + follow_length * (1 - mid_ratio_) / 2;
-        int mid_end = current_follow_end - follow_length * (1 - mid_ratio_) / 2;
-        return (shoot_offset >= mid_start && shoot_offset <= mid_end);
+    // 计算跟随段的有效开火区域（中间部分）
+    int follow_length = current_follow_end - current_follow_start + 1;
+    if (follow_length <= 0) {
+        return false;
     }
     
-    return true;
+    int margin = static_cast<int>(follow_length * (1 - mid_ratio_) / 2);
+    int mid_start = current_follow_start + margin;
+    int mid_end = current_follow_end - margin;
+    
+    return (shoot_offset >= mid_start && shoot_offset <= mid_end);
 }
 
 Eigen::Matrix<double, 2, 1> Planner::aim(const Target & target, double bullet_speed, int & selected_armor_idx)
@@ -401,8 +444,8 @@ PlanDebug Planner::debug(Target target, double bullet_speed)
   precompute_switch_info(target);
 
   for (int i = 0; i < HORIZON; i++) {
-    State yaw_state = get_state_at(i, shoot_traj_);
-    State pitch_state = get_state_at(i, shoot_traj_);
+    State yaw_state = get_yaw_state_at(i, shoot_traj_);
+    State pitch_state = get_pitch_state_at(i, shoot_traj_);
     
     double plan_yaw = tools::limit_rad(yaw_state.pos + yaw0_);
     double plan_pitch = pitch_state.pos;

@@ -129,11 +129,9 @@ private:
   
   // 显式方案核心方法
   void precompute_switch_info(Target& target);
-  State get_state_at(int idx, const Trajectory& traj);
+  State get_yaw_state_at(int idx, const Trajectory& traj);
+  State get_pitch_state_at(int idx, const Trajectory& traj);
   bool is_in_valid_fire_region(int shoot_offset);
-  
-  // 辅助方法
-  double calculate_min_transition_time(double delta_yaw, double delta_vel);
 };
 
 }  // namespace auto_aim
