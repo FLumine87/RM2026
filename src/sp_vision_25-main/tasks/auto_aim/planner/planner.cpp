@@ -88,8 +88,8 @@ Planner::Planner(const std::string & config_path)
   decision_speed_ = tools::read<double>(yaml, "decision_speed");
   high_speed_delay_time_ = tools::read<double>(yaml, "high_speed_delay_time");
   low_speed_delay_time_ = tools::read<double>(yaml, "low_speed_delay_time");
-  fire_delay_ = tools::read<double>(yaml, "fire_delay");
-  mid_ratio_ = tools::read<double>(yaml, "mid_ratio");
+  fire_delay_ = tools::read<double>(yaml, "fire_delay", 0.01);
+  mid_ratio_ = tools::read<double>(yaml, "mid_ratio", 0.9);
   
   // 显式方案参数
   transition_ratio_ = tools::read<double>(yaml, "transition_ratio", 0.3);

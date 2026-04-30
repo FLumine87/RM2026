@@ -25,6 +25,7 @@ private:
   double second_tolerance_;
   bool auto_fire_;
   double max_fire_yaw_angle_;
+  double fire_delay_;
 };
 }  // namespace auto_aim
 

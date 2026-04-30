@@ -162,7 +162,7 @@ void Target::update(const Armor & armor)
     auto angle_error = std::abs(tools::limit_rad(armor.ypr_in_world[0] - xyza[3])) +
                        std::abs(tools::limit_rad(armor.ypd_in_world[0] - ypd[0]));
 
-    // 前哨站增加“高度一致性”约束，避免转一圈后ID重排导致EKF反复重收敛
+    // 前哨站增加"高度一致性"约束，避免转一圈后ID重排导致EKF反复重收敛
     auto z_error = std::abs(armor.xyz_in_world[2] - xyza[2]);
     auto match_cost = angle_error;
     if (name == ArmorName::outpost) {
@@ -258,6 +258,8 @@ void Target::update_ypda(const Armor & armor, int id)
 Eigen::VectorXd Target::ekf_x() const { return ekf_.x; }
 
 const tools::ExtendedKalmanFilter & Target::ekf() const { return ekf_; }
+
+void Target::set_ekf_x(const Eigen::VectorXd & x) { ekf_.x = x; }
 
 std::vector<Eigen::Vector4d> Target::armor_xyza_list() const
 {

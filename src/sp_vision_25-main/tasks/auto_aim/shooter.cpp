@@ -4,17 +4,19 @@
 
 #include "tools/logger.hpp"
 #include "tools/math_tools.hpp"
+#include "tools/yaml.hpp"
 
 namespace auto_aim
 {
 Shooter::Shooter(const std::string & config_path) : last_command_{false, false, 0, 0}
 {
   auto yaml = YAML::LoadFile(config_path);
-  first_tolerance_ = yaml["first_tolerance"].as<double>() / 57.3;    // degree to rad
-  second_tolerance_ = yaml["second_tolerance"].as<double>() / 57.3;  // degree to rad
-  judge_distance_ = yaml["judge_distance"].as<double>();
-  auto_fire_ = yaml["auto_fire"].as<bool>();
-  max_fire_yaw_angle_ = yaml["max_fire_yaw_angle"].as<double>() / 57.3;    // degree to rad
+  first_tolerance_ = tools::read<double>(yaml, "first_tolerance", 3.0) / 57.3;    // degree to rad
+  second_tolerance_ = tools::read<double>(yaml, "second_tolerance", 1.5) / 57.3;  // degree to rad
+  judge_distance_ = tools::read<double>(yaml, "judge_distance", 2.0);
+  auto_fire_ = tools::read<bool>(yaml, "auto_fire", true);
+  max_fire_yaw_angle_ = tools::read<double>(yaml, "max_fire_yaw_angle", 30.0) / 57.3;    // degree to rad
+  fire_delay_ = tools::read<double>(yaml, "fire_delay", 0.01);
 }
 
 bool Shooter::shoot(
@@ -40,7 +42,7 @@ bool Shooter::shoot(
     double target_x = target_ekf_x[0];
     double target_y = target_ekf_x[2];
     double distance = std::sqrt(tools::square(target_x) + tools::square(target_y));
-    double fly_time = distance / bullet_speed;
+    double fly_time = distance / bullet_speed + fire_delay_;
     double future_armor_angle = tools::limit_rad(armor_angle + armor_yaw_vel * fly_time);
     double armor_yaw_diff = std::abs(tools::limit_rad(future_armor_angle - std::atan2(target_y, target_x)));
     if (armor_yaw_diff < max_fire_yaw_angle_) {
