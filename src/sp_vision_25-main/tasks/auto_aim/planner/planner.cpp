@@ -98,7 +98,7 @@ Planner::Planner(const std::string & config_path)
 
 Plan Planner::plan(Target target, double bullet_speed, double current_yaw, double current_pitch)
 {
-  // 1. Predict fly_time
+  // 1. 计算弹丸飞行时间（不提前预测，目标状态在检测点时再预测）
   Eigen::Vector3d xyz;
   auto min_dist = 1e10;
   for (auto & xyza : target.armor_xyza_list()) {
@@ -109,36 +109,38 @@ Plan Planner::plan(Target target, double bullet_speed, double current_yaw, doubl
     }
   }
   auto bullet_traj = tools::Trajectory(bullet_speed, min_dist, xyz.z());
-  target.predict(bullet_traj.fly_time);
+  double fly_time = bullet_traj.fly_time;
 
   // 2. 获取初始瞄准角度（通过aim函数选择最佳装甲板）
   double yaw0;
   int dummy_idx;
   try {
-    yaw0 = aim(target, bullet_speed, dummy_idx)(0);
+    yaw0 = aim(target, bullet_speed, dummy_idx, false)(0);
   } catch (const std::exception & e) {
     tools::logger()->warn("Unsolvable target {:.2f}", bullet_speed);
     return {false};
   }
 
-  // 3. 预计算切换点事件（仅对关键时间点附近，最多4个）
-  precompute_switch_events(target, bullet_speed, yaw0);
-
-  // 4. 计算三个关键时间点的状态
-  Plan plan;
-  plan.control = true;
-
-  // t=0: 收敛检测（默认视为跟随段）
-  State state_origin = get_follow_state(target, bullet_speed, yaw0, 0);
-  
-  // t=fire_delay: 开火判断
-  State state_fire = get_state_at_time(target, bullet_speed, yaw0, fire_delay_);
-  
-  // t=gimbal_delay: 发送云台指令
+  // 3. 计算 gimbal_delay（用于云台指令发出时刻，不影响目标状态预测）
   double gimbal_delay = std::abs(target.ekf_x()[7]) > decision_speed_ 
       ? high_speed_delay_time_ 
       : low_speed_delay_time_;
-  State state_gimbal = get_state_at_time(target, bullet_speed, yaw0, gimbal_delay);
+
+  // 4. 预计算切换点事件（仅对关键时间点附近）
+  precompute_switch_events(target, bullet_speed, yaw0, fly_time);
+
+  // 5. 计算三个关键时间点的状态
+  Plan plan;
+  plan.control = true;
+
+  // t=0: 收敛检测（默认视为跟随段），预测到 0 + fly_time
+  State state_origin = get_follow_state(target, bullet_speed, yaw0, 0, fly_time);
+  
+  // t=fire_delay: 开火判断，预测到 fire_delay + fly_time
+  State state_fire = get_state_at_time(target, bullet_speed, yaw0, fire_delay_, fly_time);
+  
+  // t=gimbal_delay: 发送云台指令，预测到 gimbal_delay + fly_time
+  State state_gimbal = get_state_at_time(target, bullet_speed, yaw0, gimbal_delay, fly_time);
 
   // 5. 填充plan
   plan.target_yaw = static_cast<float>(tools::limit_rad(state_gimbal.yaw + yaw0));
@@ -154,9 +156,15 @@ Plan Planner::plan(Target target, double bullet_speed, double current_yaw, doubl
 
   // 6. 计算目标在fire_delay时刻的期望状态
   Target target_fire = target;
-  target_fire.predict(fire_delay_);
+  target_fire.predict(fire_delay_ + fly_time);
   int fire_armor_idx;
-  auto yp_fire = aim(target_fire, bullet_speed, fire_armor_idx);
+  Eigen::Matrix<double, 2, 1> yp_fire;
+  try {
+    yp_fire = aim(target_fire, bullet_speed, fire_armor_idx, false);
+  } catch (const std::exception & e) {
+    tools::logger()->warn("Unsolvable target at fire_delay {:.2f}", bullet_speed);
+    return {false};
+  }
   double target_yaw_fire = yp_fire(0) - yaw0;
   double target_pitch_fire = yp_fire(1);
 
@@ -213,6 +221,16 @@ Plan Planner::plan(Target target, double bullet_speed, double current_yaw, doubl
   }
   
   plan.fire = gimbal_converged && fireable;
+
+  // 用于debug可视化：只更新一次，避免被内部扫描覆盖
+  try {
+    Target target_dbg = target;
+    target_dbg.predict(gimbal_delay + fly_time);
+    int dbg_idx;
+    (void)aim(target_dbg, bullet_speed, dbg_idx, true);
+  } catch (const std::exception &) {
+    // 保持上一次有效debug_xyza
+  }
   
   return plan;
 }
@@ -228,13 +246,6 @@ Plan Planner::plan(std::optional<Target> target, double bullet_speed, double cur
 {
   if (!target.has_value()) return {false};
 
-  double delay_time =
-    std::abs(target->ekf_x()[7]) > decision_speed_ ? high_speed_delay_time_ : low_speed_delay_time_;
-
-  auto future = std::chrono::steady_clock::now() + std::chrono::microseconds(int(delay_time * 1e6));
-
-  target->predict(future);
-
   return plan(*target, bullet_speed, current_yaw, current_pitch);
 }
 
@@ -245,168 +256,184 @@ Plan Planner::plan(Target target, double bullet_speed)
 }
 
 // ==================== 核心辅助方法 ====================
-void Planner::precompute_switch_events(Target& target, double bullet_speed, double yaw0) {
+void Planner::precompute_switch_events(Target& target, double bullet_speed, double yaw0, double fly_time) {
     switch_events_.clear();
     
-    // 获取目标当前角速度
-    double current_yaw_vel = std::abs(target.ekf_x()[7]);
-    double current_pitch_vel = std::abs(target.ekf_x()[9]);
+    // 关键时间点：fire_delay 和 gimbal_delay（high/low_speed_delay_time_）
+    double key_times[] = {fire_delay_, high_speed_delay_time_, low_speed_delay_time_};
+    int num_key_times = 3;
     
-    // 关键时间点：原点(收敛检测)、fire_delay(开火判断)、两个云台延迟(发送指令)
-    double key_times[] = {0.0, fire_delay_, high_speed_delay_time_, low_speed_delay_time_};
-    int num_key_times = sizeof(key_times) / sizeof(key_times[0]);
-    
-    // 记录所有装甲板切换点及其角度变化
-    std::vector<std::pair<int, double>> all_switch_points;  // (切换时间, 角度变化量)
+    // 检测4个切换点：从每个关键时间点向左和向右各搜索1个
+    std::vector<std::pair<int, double>> switches;  // (切换时间idx, 角度变化量)
     int last_armor_idx = -1;
     double last_yaw = 0, last_pitch = 0;
     
-    tools::logger()->debug("[Planner::precompute_switch_events] Starting to detect switch points...");
-    
-    for (int t = TIME_MIN; t <= TIME_MAX; t++) {
-        Target target_t = target;
-        target_t.predict(t * DT);
-        
-        int armor_idx;
-        auto yp = aim(target_t, bullet_speed, armor_idx);
-        double yaw = yp(0);
-        double pitch = yp(1);
-        
-        if (last_armor_idx != -1 && armor_idx != last_armor_idx) {
-            double delta_yaw = std::abs(yaw - last_yaw);
-            double delta_pitch = std::abs(pitch - last_pitch);
-            double angle_change = std::sqrt(delta_yaw * delta_yaw + delta_pitch * delta_pitch);
-            all_switch_points.push_back({t, angle_change});
-            tools::logger()->debug("[Planner::precompute_switch_events] Detected switch at t={}: {} -> {}, angle_change={:.3f}", t, last_armor_idx, armor_idx, angle_change);
-        }
-        last_armor_idx = armor_idx;
-        last_yaw = yaw;
-        last_pitch = pitch;
-    }
-    
-    tools::logger()->debug("[Planner::precompute_switch_events] Total switch points detected: {}", all_switch_points.size());
-    
-    // 从每个关键时间点往左右找最近的切换点，共处理4个
-    std::set<int> selected_switches;
-    
-    for (int i = 0; i < num_key_times && static_cast<int>(selected_switches.size()) < 4; i++) {
+    for (int i = 0; i < num_key_times; i++) {
         double key_time = key_times[i];
         int key_idx = static_cast<int>(key_time / DT);
         
-        // 往左右搜索最近的切换点
-        int left_switch = -1, right_switch = -1;
-        for (int dt = 0; dt <= 500 && (left_switch == -1 || right_switch == -1); dt++) {
-            if (left_switch == -1) {
-                for (const auto& switch_pair : all_switch_points) {
-                    if (switch_pair.first == key_idx - dt) {
-                        left_switch = switch_pair.first;
-                        break;
-                    }
-                }
+        // 向左搜索最近的切换点
+        for (int dt = 1; dt <= 500; dt++) {
+            int t = key_idx - dt;
+            if (t < TIME_MIN) break;
+            
+            Target target_t = target;
+            target_t.predict(t * DT + fly_time);
+            
+            int armor_idx;
+            Eigen::Matrix<double, 2, 1> yp;
+            try {
+                yp = aim(target_t, bullet_speed, armor_idx, false);
+            } catch (...) {
+                continue;
             }
-            if (right_switch == -1) {
-                for (const auto& switch_pair : all_switch_points) {
-                    if (switch_pair.first == key_idx + dt) {
-                        right_switch = switch_pair.first;
-                        break;
-                    }
-                }
+            
+            if (last_armor_idx != -1 && armor_idx != last_armor_idx) {
+                double delta_yaw = std::abs(yp(0) - last_yaw);
+                double delta_pitch = std::abs(yp(1) - last_pitch);
+                double angle_change = std::sqrt(delta_yaw * delta_yaw + delta_pitch * delta_pitch);
+                switches.push_back({t, angle_change});
+                last_armor_idx = armor_idx;
+                last_yaw = yp(0);
+                last_pitch = yp(1);
+                break;  // 找到后停止搜索
             }
+            last_armor_idx = armor_idx;
+            last_yaw = yp(0);
+            last_pitch = yp(1);
         }
         
-        // 选择最近的切换点
-        int chosen_switch = -1;
-        if (left_switch != -1 && right_switch != -1) {
-            chosen_switch = (key_idx - left_switch <= right_switch - key_idx) ? left_switch : right_switch;
-        } else if (left_switch != -1) {
-            chosen_switch = left_switch;
-        } else if (right_switch != -1) {
-            chosen_switch = right_switch;
-        }
+        // 重置状态，继续向右搜索
+        last_armor_idx = -1;
         
-        if (chosen_switch != -1 && selected_switches.count(chosen_switch) == 0) {
-            // 获取切换点前后的状态（用于计算最小过渡时间）
+        // 向右搜索最近的切换点
+        for (int dt = 1; dt <= 500; dt++) {
+            int t = key_idx + dt;
+            if (t > TIME_MAX) break;
+            
+            Target target_t = target;
+            target_t.predict(t * DT + fly_time);
+            
+            int armor_idx;
+            Eigen::Matrix<double, 2, 1> yp;
+            try {
+                yp = aim(target_t, bullet_speed, armor_idx, false);
+            } catch (...) {
+                continue;
+            }
+            
+            if (last_armor_idx != -1 && armor_idx != last_armor_idx) {
+                double delta_yaw = std::abs(yp(0) - last_yaw);
+                double delta_pitch = std::abs(yp(1) - last_pitch);
+                double angle_change = std::sqrt(delta_yaw * delta_yaw + delta_pitch * delta_pitch);
+                switches.push_back({t, angle_change});
+                last_armor_idx = armor_idx;
+                last_yaw = yp(0);
+                last_pitch = yp(1);
+                break;  // 找到后停止搜索
+            }
+            last_armor_idx = armor_idx;
+            last_yaw = yp(0);
+            last_pitch = yp(1);
+        }
+    }
+    
+    if (switches.size() < 2) return;
+    
+    // 按时间排序并去重
+    std::sort(switches.begin(), switches.end(), 
+        [](const auto& a, const auto& b) { return a.first < b.first; });
+    switches.erase(std::unique(switches.begin(), switches.end(),
+        [](const auto& a, const auto& b) { return a.first == b.first; }), switches.end());
+    
+    // max_T = 相邻切换点间距（switches已按时间排序）
+    double max_T = (switches[1].first - switches[0].first) * DT;
+    
+    // 对每个切换点计算过渡段
+    std::set<int> processed;
+    for (const auto& sw : switches) {
+        int chosen_switch = sw.first;
+        if (processed.count(chosen_switch)) continue;
+        processed.insert(chosen_switch);
+        
+        try {
+            // 获取切换点前后的状态
             Target target_before = target;
-            target_before.predict((chosen_switch - 1) * DT);
+            target_before.predict((chosen_switch - 1) * DT + fly_time);
             int dummy_idx;
-            auto yp_before = aim(target_before, bullet_speed, dummy_idx);
+            auto yp_before = aim(target_before, bullet_speed, dummy_idx, false);
             double yaw_before = yp_before(0);
             double pitch_before = yp_before(1);
             
             Target target_after = target;
-            target_after.predict((chosen_switch + 1) * DT);
-            auto yp_after = aim(target_after, bullet_speed, dummy_idx);
+            target_after.predict((chosen_switch + 1) * DT + fly_time);
+            auto yp_after = aim(target_after, bullet_speed, dummy_idx, false);
             double yaw_after = yp_after(0);
             double pitch_after = yp_after(1);
             
-            // 计算角度变化量
             double delta_yaw = std::abs(yaw_after - yaw_before);
             double delta_pitch = std::abs(pitch_after - pitch_before);
             
-            // 计算满足动力学约束的最小过渡时间
-            // 五次多项式的最大加速度公式: max_acc = 60 * delta / T^2
             double min_T_yaw = std::sqrt(60 * delta_yaw / max_yaw_acc_);
             double min_T_pitch = std::sqrt(60 * delta_pitch / max_pitch_acc_);
             double min_T = std::max(min_T_yaw, min_T_pitch);
             
-            // 根据transition_ratio放大过渡时间（0.0=最小过渡, 1.0=最大过渡）
-            double max_T = 0.15;  // 150ms最大过渡时间
             double T = min_T + transition_ratio_ * (max_T - min_T);
             
-            // 以切换点为中心对称分布过渡段
-            SwitchEvent event;
             int half_steps = static_cast<int>(T / DT / 2);
+            if (half_steps <= 0) continue;
+            
+            SwitchEvent event;
+            event.t_switch = chosen_switch;
             event.t_start = std::max(TIME_MIN, chosen_switch - half_steps);
             event.t_end = std::min(TIME_MAX, chosen_switch + half_steps);
             
-            // 获取过渡段起点状态
             Target target_start = target;
-            target_start.predict(event.t_start * DT);
-            auto yp_start = aim(target_start, bullet_speed, dummy_idx);
+            target_start.predict(event.t_start * DT + fly_time);
+            auto yp_start = aim(target_start, bullet_speed, dummy_idx, false);
             event.yaw_start = yp_start(0) - yaw0;
             event.pitch_start = yp_start(1);
             
-            // 获取过渡段终点状态
             Target target_end = target;
-            target_end.predict(event.t_end * DT);
-            auto yp_end = aim(target_end, bullet_speed, dummy_idx);
+            target_end.predict(event.t_end * DT + fly_time);
+            auto yp_end = aim(target_end, bullet_speed, dummy_idx, false);
             event.yaw_end = yp_end(0) - yaw0;
             event.pitch_end = yp_end(1);
             
-            // 数值差分计算速度
             Target target_start_prev = target;
-            target_start_prev.predict((event.t_start - 1) * DT);
-            auto yp_start_prev = aim(target_start_prev, bullet_speed, dummy_idx);
+            target_start_prev.predict((event.t_start - 1) * DT + fly_time);
+            auto yp_start_prev = aim(target_start_prev, bullet_speed, dummy_idx, false);
             event.yaw_vel_start = (yp_start(0) - yp_start_prev(0)) / DT;
             event.pitch_vel_start = (yp_start(1) - yp_start_prev(1)) / DT;
             
             Target target_end_prev = target;
-            target_end_prev.predict((event.t_end - 1) * DT);
-            auto yp_end_prev = aim(target_end_prev, bullet_speed, dummy_idx);
+            target_end_prev.predict((event.t_end - 1) * DT + fly_time);
+            auto yp_end_prev = aim(target_end_prev, bullet_speed, dummy_idx, false);
             event.yaw_vel_end = (yp_end(0) - yp_end_prev(0)) / DT;
             event.pitch_vel_end = (yp_end(1) - yp_end_prev(1)) / DT;
             
-            // 生成五次多项式
             double actual_T = (event.t_end - event.t_start) * DT;
-            if (actual_T > 0.001) {
-                event.yaw_poly.solve(
-                    event.yaw_start, event.yaw_vel_start, 0,
-                    event.yaw_end, event.yaw_vel_end, 0,
-                    actual_T
-                );
-                event.pitch_poly.solve(
-                    event.pitch_start, event.pitch_vel_start, 0,
-                    event.pitch_end, event.pitch_vel_end, 0,
-                    actual_T
-                );
-            }
-            
+            if (actual_T <= 0.001) continue;
+
+            event.yaw_poly.solve(
+                event.yaw_start, event.yaw_vel_start, 0,
+                event.yaw_end, event.yaw_vel_end, 0,
+                actual_T
+            );
+            event.pitch_poly.solve(
+                event.pitch_start, event.pitch_vel_start, 0,
+                event.pitch_end, event.pitch_vel_end, 0,
+                actual_T
+            );
+
             switch_events_.push_back(event);
+        } catch (const std::exception& e) {
+            continue;
         }
     }
 }
 
-State Planner::get_state_at_time(Target& target, double bullet_speed, double yaw0, double time) {
+State Planner::get_state_at_time(Target& target, double bullet_speed, double yaw0, double time, double fly_time) {
     int t = static_cast<int>(time / DT);
     
     // 检查是否在过渡段内
@@ -426,21 +453,33 @@ State Planner::get_state_at_time(Target& target, double bullet_speed, double yaw
     }
     
     // 跟随段：直接预测
-    return get_follow_state(target, bullet_speed, yaw0, t);
+    return get_follow_state(target, bullet_speed, yaw0, t, fly_time);
 }
 
-State Planner::get_follow_state(Target& target, double bullet_speed, double yaw0, int t) {
+State Planner::get_follow_state(Target& target, double bullet_speed, double yaw0, int t, double fly_time) {
     Target target_t = target;
-    target_t.predict(t * DT);
+    target_t.predict(t * DT + fly_time);
     
     // 通过aim函数选择最佳装甲板
     int armor_idx;
-    auto yp = aim(target_t, bullet_speed, armor_idx);
+    Eigen::Matrix<double, 2, 1> yp;
+    try {
+      yp = aim(target_t, bullet_speed, armor_idx, false);
+    } catch (const std::exception & e) {
+        tools::logger()->warn("Unsolvable target at get_follow_state t={}", t);
+        return {0, 0, 0, 0, 0, 0};
+    }
     
     // 数值差分计算速度（使用相同的装甲板索引）
     Target target_t_prev = target;
-    target_t_prev.predict((t - 1) * DT);
-    auto yp_prev = aim(target_t_prev, bullet_speed, armor_idx);
+    target_t_prev.predict((t - 1) * DT + fly_time);
+    Eigen::Matrix<double, 2, 1> yp_prev;
+    try {
+      yp_prev = aim(target_t_prev, bullet_speed, armor_idx, false);
+    } catch (const std::exception & e) {
+        tools::logger()->warn("Unsolvable target at get_follow_state t={}", t-1);
+        return {0, 0, 0, 0, 0, 0};
+    }
     
     double yaw = yp(0) - yaw0;
     double yaw_vel = (yp(0) - yp_prev(0)) / DT;
@@ -453,12 +492,15 @@ State Planner::get_follow_state(Target& target, double bullet_speed, double yaw0
     return {yaw, yaw_vel, yaw_acc, pitch, pitch_vel, pitch_acc};
 }
 
-Eigen::Matrix<double, 2, 1> Planner::aim(const Target & target, double bullet_speed, int & selected_armor_idx)
+Eigen::Matrix<double, 2, 1> Planner::aim(
+  const Target & target, double bullet_speed, int & selected_armor_idx, bool update_debug_xyza)
 {
   Eigen::Vector3d xyz;
   double yaw;
   auto min_dist = 1e10;
   selected_armor_idx = 0;
+
+  const auto xyza_list = target.armor_xyza_list();
 
   tools::logger()->debug("[Planner::aim] Target: armor_num: {}, name: {}", target.armor_num(), static_cast<int>(target.name));
   
@@ -467,8 +509,8 @@ Eigen::Matrix<double, 2, 1> Planner::aim(const Target & target, double bullet_sp
   tools::logger()->debug("[Planner::aim] EKF state: x={:.3f}, y={:.3f}, z={:.3f}, angle={:.3f}, r={:.3f}", 
       ekf_x[0], ekf_x[2], ekf_x[4], ekf_x[6], ekf_x[8]);
   
-  for (int i = 0; i < target.armor_xyza_list().size(); i++) {
-    const auto & xyza = target.armor_xyza_list()[i];
+  for (int i = 0; i < static_cast<int>(xyza_list.size()); i++) {
+    const auto & xyza = xyza_list[i];
     auto dist = xyza.head<2>().norm();
     
     // 检查 bullet_traj 是否可解
@@ -483,7 +525,9 @@ Eigen::Matrix<double, 2, 1> Planner::aim(const Target & target, double bullet_sp
       selected_armor_idx = i;
     }
   }
-  debug_xyza = Eigen::Vector4d(xyz.x(), xyz.y(), xyz.z(), yaw);
+  if (update_debug_xyza) {
+    debug_xyza = Eigen::Vector4d(xyz.x(), xyz.y(), xyz.z(), yaw);
+  }
 
   auto azim = std::atan2(xyz.y(), xyz.x());
   auto bullet_traj = tools::Trajectory(bullet_speed, min_dist, xyz.z());
@@ -518,7 +562,7 @@ PlanDebug Planner::debug(Target target, double bullet_speed)
   double yaw0;
   int dummy_idx;
   try {
-    yaw0 = aim(target_predicted, bullet_speed, dummy_idx)(0);
+    yaw0 = aim(target_predicted, bullet_speed, dummy_idx, false)(0);
   } catch (const std::exception & e) {
     tools::logger()->warn("Unsolvable target {:.2f}", bullet_speed);
     debug_result.control = false;
@@ -534,72 +578,85 @@ PlanDebug Planner::debug(Target target, double bullet_speed)
     tgt.predict(t * DT);
     
     int armor_idx;
-    aim(tgt, bullet_speed, armor_idx);
+    try {
+      aim(tgt, bullet_speed, armor_idx, false);
+    } catch (const std::exception & e) {
+      tools::logger()->warn("Unsolvable target at debug t={}", t);
+      continue;
+    }
     
     if (last_armor_idx != -1 && armor_idx != last_armor_idx) {
-      // 获取切换点前后的状态（用于计算最小过渡时间）
-      Target target_before = target_predicted;
-      target_before.predict((t - 1) * DT);
-      auto yp_before = aim(target_before, bullet_speed, dummy_idx);
-      double yaw_before = yp_before(0);
-      double pitch_before = yp_before(1);
-      
-      Target target_after = target_predicted;
-      target_after.predict((t + 1) * DT);
-      auto yp_after = aim(target_after, bullet_speed, dummy_idx);
-      double yaw_after = yp_after(0);
-      double pitch_after = yp_after(1);
-      
-      // 计算角度变化量
-      double delta_yaw = std::abs(yaw_after - yaw_before);
-      double delta_pitch = std::abs(pitch_after - pitch_before);
-      
-      // 计算满足动力学约束的最小过渡时间
-      // 五次多项式的最大加速度公式: max_acc = 60 * delta / T^2
-      double min_T_yaw = std::sqrt(60 * delta_yaw / max_yaw_acc_);
-      double min_T_pitch = std::sqrt(60 * delta_pitch / max_pitch_acc_);
-      double min_T = std::max(min_T_yaw, min_T_pitch);
-      
-      // 根据transition_ratio放大过渡时间（0.0=最小过渡, 1.0=最大过渡）
-      double max_T = 0.15;  // 150ms最大过渡时间
-      double T = min_T + transition_ratio_ * (max_T - min_T);
-      
-      // 以切换点为中心对称分布过渡段
-      SwitchEvent event;
-      int half_steps = static_cast<int>(T / DT / 2);
-      event.t_start = std::max(TIME_MIN, t - half_steps);
-      event.t_end = std::min(TIME_MAX, t + half_steps);
-      
-      // 获取过渡段起点状态（切换点前的装甲板）
-      Target target_start = target_predicted;
-      target_start.predict(event.t_start * DT);
-      auto yp_start = aim(target_start, bullet_speed, dummy_idx);
-      event.yaw_start = yp_start(0) - yaw0;
-      event.pitch_start = yp_start(1);
-      
-      // 获取过渡段终点状态（切换点后的装甲板）
-      Target target_end = target_predicted;
-      target_end.predict(event.t_end * DT);
-      auto yp_end = aim(target_end, bullet_speed, dummy_idx);
-      event.yaw_end = yp_end(0) - yaw0;
-      event.pitch_end = yp_end(1);
-      
-      // 数值差分计算速度
-      Target target_start_prev = target_predicted;
-      target_start_prev.predict((event.t_start - 1) * DT);
-      auto yp_start_prev = aim(target_start_prev, bullet_speed, dummy_idx);
-      event.yaw_vel_start = (yp_start(0) - yp_start_prev(0)) / DT;
-      event.pitch_vel_start = (yp_start(1) - yp_start_prev(1)) / DT;
-      
-      Target target_end_prev = target_predicted;
-      target_end_prev.predict((event.t_end - 1) * DT);
-      auto yp_end_prev = aim(target_end_prev, bullet_speed, dummy_idx);
-      event.yaw_vel_end = (yp_end(0) - yp_end_prev(0)) / DT;
-      event.pitch_vel_end = (yp_end(1) - yp_end_prev(1)) / DT;
-      
-      // 生成五次多项式
-      double actual_T = (event.t_end - event.t_start) * DT;
-      if (actual_T > 0.001) {
+      try {
+        // 获取切换点前后的状态（用于计算最小过渡时间）
+        Target target_before = target_predicted;
+        target_before.predict((t - 1) * DT);
+        auto yp_before = aim(target_before, bullet_speed, dummy_idx, false);
+        double yaw_before = yp_before(0);
+        double pitch_before = yp_before(1);
+        
+        Target target_after = target_predicted;
+        target_after.predict((t + 1) * DT);
+        auto yp_after = aim(target_after, bullet_speed, dummy_idx, false);
+        double yaw_after = yp_after(0);
+        double pitch_after = yp_after(1);
+        
+        // 计算角度变化量
+        double delta_yaw = std::abs(yaw_after - yaw_before);
+        double delta_pitch = std::abs(pitch_after - pitch_before);
+        
+        // 计算满足动力学约束的最小过渡时间
+        // 五次多项式的最大加速度公式: max_acc = 60 * delta / T^2
+        double min_T_yaw = std::sqrt(60 * delta_yaw / max_yaw_acc_);
+        double min_T_pitch = std::sqrt(60 * delta_pitch / max_pitch_acc_);
+        double min_T = std::max(min_T_yaw, min_T_pitch);
+        
+        // 根据transition_ratio放大过渡时间（0.0=最小过渡, 1.0=最大过渡）
+        double max_T = 0.15;  // 150ms最大过渡时间
+        double T = min_T + transition_ratio_ * (max_T - min_T);
+        
+        // 以切换点为中心对称分布过渡段
+        SwitchEvent event;
+        int half_steps = static_cast<int>(T / DT / 2);
+        if (half_steps <= 0) {
+          continue;
+        }
+        event.t_switch = t;
+        event.t_start = std::max(TIME_MIN, t - half_steps);
+        event.t_end = std::min(TIME_MAX, t + half_steps);
+        
+        // 获取过渡段起点状态（切换点前的装甲板）
+        Target target_start = target_predicted;
+        target_start.predict(event.t_start * DT);
+        auto yp_start = aim(target_start, bullet_speed, dummy_idx, false);
+        event.yaw_start = yp_start(0) - yaw0;
+        event.pitch_start = yp_start(1);
+        
+        // 获取过渡段终点状态（切换点后的装甲板）
+        Target target_end = target_predicted;
+        target_end.predict(event.t_end * DT);
+        auto yp_end = aim(target_end, bullet_speed, dummy_idx, false);
+        event.yaw_end = yp_end(0) - yaw0;
+        event.pitch_end = yp_end(1);
+        
+        // 数值差分计算速度
+        Target target_start_prev = target_predicted;
+        target_start_prev.predict((event.t_start - 1) * DT);
+        auto yp_start_prev = aim(target_start_prev, bullet_speed, dummy_idx, false);
+        event.yaw_vel_start = (yp_start(0) - yp_start_prev(0)) / DT;
+        event.pitch_vel_start = (yp_start(1) - yp_start_prev(1)) / DT;
+        
+        Target target_end_prev = target_predicted;
+        target_end_prev.predict((event.t_end - 1) * DT);
+        auto yp_end_prev = aim(target_end_prev, bullet_speed, dummy_idx, false);
+        event.yaw_vel_end = (yp_end(0) - yp_end_prev(0)) / DT;
+        event.pitch_vel_end = (yp_end(1) - yp_end_prev(1)) / DT;
+        
+        // 生成五次多项式
+        double actual_T = (event.t_end - event.t_start) * DT;
+        if (actual_T <= 0.001) {
+          continue;
+        }
+
         event.yaw_poly.solve(
           event.yaw_start, event.yaw_vel_start, 0,
           event.yaw_end, event.yaw_vel_end, 0,
@@ -610,9 +667,11 @@ PlanDebug Planner::debug(Target target, double bullet_speed)
           event.pitch_end, event.pitch_vel_end, 0,
           actual_T
         );
+
+        all_switch_events.push_back(event);
+      } catch (const std::exception & e) {
+        tools::logger()->warn("Unsolvable target at debug switch t={}", t);
       }
-      
-      all_switch_events.push_back(event);
     }
     last_armor_idx = armor_idx;
   }
@@ -641,7 +700,7 @@ PlanDebug Planner::debug(Target target, double bullet_speed)
       Target tgt = target_predicted;
       tgt.predict(time);
       int armor_idx;
-      auto yp = aim(tgt, bullet_speed, armor_idx);
+      auto yp = aim(tgt, bullet_speed, armor_idx, false);
       plan_yaw = tools::limit_rad(yp(0));
       plan_pitch = yp(1);
     }
@@ -650,7 +709,7 @@ PlanDebug Planner::debug(Target target, double bullet_speed)
     Target target_t = target;
     target_t.predict(fly_time + time);
     int armor_idx;
-    auto yp = aim(target_t, bullet_speed, armor_idx);
+    auto yp = aim(target_t, bullet_speed, armor_idx, false);
     double target_yaw = tools::limit_rad(yp(0));
     double target_pitch = yp(1);
 

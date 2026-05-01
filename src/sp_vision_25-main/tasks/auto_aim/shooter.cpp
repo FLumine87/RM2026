@@ -34,8 +34,7 @@ bool Shooter::shoot(
   // tools::logger()->debug("d(command.yaw) is {:.4f}", std::abs(last_command_.yaw - command.yaw));
   if (
     std::abs(last_command_.yaw - command.yaw) < tolerance * 2 &&  //此时认为command突变不应该射击
-    std::abs(gimbal_pos[0] - last_command_.yaw) < tolerance &&    //应该减去上一次command的yaw值
-    aimer.debug_aim_point.valid) {
+    std::abs(gimbal_pos[0] - command.yaw) < tolerance) {          //检查当前云台角度与当前命令角度的偏差
     auto target_ekf_x = targets.front().ekf_x();
     double armor_angle = target_ekf_x[6];
     double armor_yaw_vel = target_ekf_x[7];

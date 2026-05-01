@@ -53,7 +53,7 @@ class QuinticPolynomial {
 public:
     Eigen::VectorXd coeffs_;  // 6个系数
     
-    QuinticPolynomial() : coeffs_(6) {}
+  QuinticPolynomial() : coeffs_(Eigen::VectorXd::Zero(6)) {}
     
     // 根据边界条件求解
     void solve(
@@ -94,7 +94,7 @@ struct SwitchEvent {
 class Planner
 {
 public:
-  Eigen::Vector4d debug_xyza;
+  Eigen::Vector4d debug_xyza{Eigen::Vector4d::Zero()};
   Planner(const std::string & config_path);
 
   Plan plan(Target target, double bullet_speed, double current_yaw, double current_pitch);
@@ -123,10 +123,11 @@ private:
   std::vector<SwitchEvent> switch_events_;
 
   // 核心方法
-  Eigen::Matrix<double, 2, 1> aim(const Target & target, double bullet_speed, int & selected_armor_idx);
-  void precompute_switch_events(Target& target, double bullet_speed, double yaw0);
-  State get_state_at_time(Target& target, double bullet_speed, double yaw0, double time);
-  State get_follow_state(Target& target, double bullet_speed, double yaw0, int t);
+  Eigen::Matrix<double, 2, 1> aim(
+    const Target & target, double bullet_speed, int & selected_armor_idx, bool update_debug_xyza = false);
+  void precompute_switch_events(Target& target, double bullet_speed, double yaw0, double fly_time);
+  State get_state_at_time(Target& target, double bullet_speed, double yaw0, double time, double fly_time);
+  State get_follow_state(Target& target, double bullet_speed, double yaw0, int t, double fly_time);
 };
 
 }  // namespace auto_aim

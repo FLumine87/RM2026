@@ -52,6 +52,11 @@ int main(int argc, char * argv[])
 
   std::mutex plan_mutex;
   auto_aim::Plan latest_plan = {};
+  Eigen::Vector4d latest_debug_xyza = Eigen::Vector4d::Zero();
+  bool latest_plan_fire = false;
+  bool latest_shooter_fire = false;
+  bool latest_final_fire = false;
+  bool latest_aimer_valid = false;
 
   tools::ThreadSafeQueue<std::list<auto_aim::Target>, true> targets_queue(1);
   targets_queue.push({});
@@ -68,6 +73,10 @@ int main(int argc, char * argv[])
       auto target = targets.empty() ? std::nullopt : std::optional<auto_aim::Target>(targets.front());
       auto plan = planner.plan(target, gs.bullet_speed, gs.yaw, gs.pitch);
 
+      // Shooter 依赖 aimer.debug_aim_point.valid；这个 debug 程序不走 aimer 输出指令，
+      // 但仍需要调用一次以刷新 debug_aim_point。
+      (void)aimer.aim(targets, std::chrono::steady_clock::now(), gs.bullet_speed, true);
+
       io::Command command;
       command.control = plan.control;
       command.shoot = plan.fire;
@@ -78,7 +87,7 @@ int main(int argc, char * argv[])
 
       bool shooter_fire = shooter.shoot(command, aimer, targets, gimbal_pos, gs.bullet_speed);
 
-      bool final_fire = plan.fire && shooter_fire;
+      bool final_fire = plan.fire;// && shooter_fire;
 
             // // 检查目标平移速度是否超过阈值
       // bool velocity_threshold_check = true;
@@ -125,7 +134,11 @@ int main(int argc, char * argv[])
       {
         std::lock_guard<std::mutex> lock(plan_mutex);
         latest_plan = plan;
-        latest_plan.fire = final_fire;
+        latest_debug_xyza = planner.debug_xyza;
+        latest_plan_fire = plan.fire;
+        latest_shooter_fire = shooter_fire;
+        latest_final_fire = final_fire;
+        latest_aimer_valid = aimer.debug_aim_point.valid;
       }
 
       gimbal.send(
@@ -189,6 +202,22 @@ int main(int argc, char * argv[])
     else
       targets_queue.push({});
 
+    auto_aim::Plan plan_copy;
+    Eigen::Vector4d debug_xyza_copy;
+    bool plan_fire_copy;
+    bool shooter_fire_copy;
+    bool final_fire_copy;
+    bool aimer_valid_copy;
+    {
+      std::lock_guard<std::mutex> lock(plan_mutex);
+      plan_copy = latest_plan;
+      debug_xyza_copy = latest_debug_xyza;
+      plan_fire_copy = latest_plan_fire;
+      shooter_fire_copy = latest_shooter_fire;
+      final_fire_copy = latest_final_fire;
+      aimer_valid_copy = latest_aimer_valid;
+    }
+
     if (!targets.empty()) {
       auto target = targets.front();
 
@@ -200,18 +229,17 @@ int main(int argc, char * argv[])
         tools::draw_points(img, image_points, {0, 255, 0});
       }
 
-      Eigen::Vector4d aim_xyza = planner.debug_xyza;
+      Eigen::Vector4d aim_xyza = debug_xyza_copy;
       auto image_points =
         solver.reproject_armor(aim_xyza.head(3), aim_xyza[3], target.armor_type, target.name);
       tools::draw_points(img, image_points, {0, 0, 255});
     }
 
-    {
-      std::lock_guard<std::mutex> lock(plan_mutex);
-      auto text = fmt::format(
-        "yaw: {:.2f} pitch: {:.2f} fire: {}", latest_plan.yaw, latest_plan.pitch, latest_plan.fire);
-      cv::putText(img, text, {10, 30}, cv::FONT_HERSHEY_SIMPLEX, 1.0, {0, 255, 0}, 2);
-    }
+    auto text = fmt::format(
+      "yaw: {:.2f} pitch: {:.2f} aimer_valid: {} plan_fire: {} shooter: {} final: {}",
+      plan_copy.yaw, plan_copy.pitch, aimer_valid_copy, plan_fire_copy, shooter_fire_copy,
+      final_fire_copy);
+    cv::putText(img, text, {10, 30}, cv::FONT_HERSHEY_SIMPLEX, 1.0, {0, 255, 0}, 2);
 
     cv::resize(img, img, {}, 0.5, 0.5);  // 显示时缩小图片尺寸
     cv::imshow("reprojection", img);

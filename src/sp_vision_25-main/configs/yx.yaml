@@ -38,24 +38,24 @@ max_temp_lost_count: 15
 outpost_max_temp_lost_count: 75
 
 #####-----aimer参数-----#####
-yaw_offset: 0.5 # degree -2.5
+yaw_offset: 0.0 # degree -2.5
 pitch_offset: -1.3 # degree 2
 comming_angle: 60 # degree
-leaving_angle: 20 # degree
+leaving_angle: 60 # degree
 decision_speed: 8 # rad/s
-high_speed_delay_time: 0.085 # s
-low_speed_delay_time: 0.085 # s
-fire_delay: 0.1 # s
+high_speed_delay_time: 0.025 # s
+low_speed_delay_time: 0.025 # s
+fire_delay: 0.012 # s
 
 #####-----shooter参数-----#####
-first_tolerance: 3 # 近距离射击容差，degree
-second_tolerance: 1.5 # 远距离射击容差，degree
+first_tolerance: 30 # 近距离射击容差，degree
+second_tolerance: 30 # 远距离射击容差，degree
 judge_distance: 2 #距离判断阈值
 auto_fire: true # 是否由自瞄控制射击
-max_fire_yaw_angle: 15 # 允许开火的最大装甲板偏航角，degree
+max_fire_yaw_angle: 20 # 允许开火的最大装甲板偏航角，degree
 
 camera_name: "hikrobot"
-exposure_ms: 1
+exposure_ms: 2
 gain: 16.8
 vid_pid: "2bdf:0001"
 
@@ -74,16 +74,27 @@ R_gimbal2imubody: [0, 1, 0, -1, 0, 0, 0, 0, 1]
 # distort_coeffs: [-0.06094747804015388, 0.095382434159573606, -0.00050961560953343983, 0.000122850992892626, 0]
 
 # 重投影误差: 0.0479px duobo 12mm
-camera_matrix: [3640.0307247132732, 0, 733.50105164161846, 0, 3636.5137088762144, 616.999577651545, 0, 0, 1]
-distort_coeffs: [-0.14820436180762939, -0.19281101979957613, 0.00092208707422357622, 0.0018606322883594991, 0]
+#camera_matrix: [3640.0307247132732, 0, 733.50105164161846, 0, 3636.5137088762144, 616.999577651545, 0, 0, 1]
+#distort_coeffs: [-0.14820436180762939, -0.19281101979957613, 0.00092208707422357622, 0.0018606322883594991, 0]
+
+# 重投影误差: 0.0545px yingxiong 12mm
+camera_matrix: [3645.3666588317928, 0, 704.04557081123926, 0, 3640.3544559389038, 527.14972373583009, 0, 0, 1]
+distort_coeffs: [-0.16366939202749609, 0.037689628768264996, -0.00061045980336515461, -0.00039416774051375503, 0]
+
+# 重投影误差: 0.0545px
+#camera_matrix: [3645.3666588317928, 0, 704.04557081123926, 0, 3640.3544559389038, 527.14972373583009, 0, 0, 1]
+#distort_coeffs: [-0.16366939202749609, 0.037689628768264996, -0.00061045980336515461, -0.00039416774051375503, 0]
+
 
 # 相机同理想情况的偏角: yaw-1.61 pitch-0.82 roll-0.61 degree
 # R_camera2gimbal: [0.02823004230930648, -0.014076983590428133, 0.99950232778328707, -0.99954530259354468, -0.010995644138609872, 0.028076393521179785, 0.010594940981141165, -0.99984045444409364, -0.014380990321749998]
 # t_camera2gimbal: [0.045517325957791413, 0.10544338092767802, 0.034649710880185793]
 
 # 相机同理想情况的偏角: yaw-1.61 pitch-0.82 roll-0.61 degree
-R_camera2gimbal: [0, 0, 1, -0.999744, -0.022689, 0, 0.022689, -0.999744, 0]
-t_camera2gimbal: [0.145, 0, 0.07]
+#R_camera2gimbal: [0, 0, 1, -0.999744, -0.022689, 0, 0.022689, -0.999744, 0]
+#t_camera2gimbal: [0.145, 0, 0.07]
+R_camera2gimbal: [0.000000, -0.130526, 0.991445, -1.000000, 0.000000, 0.000000, 0.000000, -0.991445, -0.130526]
+t_camera2gimbal: [0.21998, 0.07, 0.03]
 
 #####-----cboard参数-----#####
 quaternion_canid: 0x100
@@ -96,15 +107,15 @@ com_port: "/dev/gimbal"
 
 #####-----planner-----#####
 fire_thresh: 0.02
-convergence_thresh: 0.1
-mid_ratio: 0.9
+convergence_thresh: 0.06
+mid_ratio: 0.2
 
 # 显式方案参数
-transition_ratio: 0.1  # 过渡段比例 (0.0=最小化过渡, 1.0=最大化过渡)
+transition_ratio: 0.2  # 过渡段比例 (0.0=最小化过渡, 1.0=最大化过渡)
 
 # 动力学约束
-max_yaw_acc: 50 #20~100
-max_pitch_acc: 100 #无法调整，电控端加梯度 
+max_yaw_acc: 5000 #20~100
+max_pitch_acc: 10000 #无法调整，电控端加梯度 
 
 #####-----buff_detector参数-----#####
 model: "assets/yolo11_buff_int8.xml"
