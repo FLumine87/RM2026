@@ -1,4 +1,4 @@
-﻿#include "target.hpp"
+#include "target.hpp"
 
 #include <numeric>
 
@@ -272,6 +272,8 @@ std::vector<Eigen::Vector4d> Target::armor_xyza_list() const
   }
   return _armor_xyza_list;
 }
+
+int Target::armor_num() const { return armor_num_; }
 
 bool Target::diverged() const
 {

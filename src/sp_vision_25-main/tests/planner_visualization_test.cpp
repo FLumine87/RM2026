@@ -52,115 +52,158 @@ int main(int argc, char * argv[])
 
   auto debug = planner.debug(target, 22.0);
 
+  // 生成时间点（debug函数返回从-10ms到500ms，10ms步长）
   std::vector<double> time_points;
-  for (int i = 0; i < auto_aim::HORIZON; i++) {
-    time_points.push_back(i * auto_aim::DT);
+  for (int t_ms = -10; t_ms <= 500; t_ms += 10) {
+    time_points.push_back(t_ms * 0.001);
   }
+  int num_points = time_points.size();
 
-  int width = 800;
-  int height = 1000;
+  int width = 1200;
+  int height = 900;
   cv::Mat image(height, width, CV_8UC3, cv::Scalar(255, 255, 255));
 
-  // 绘制坐标轴
-  int margin = 50;
-  int half_height = height / 2;
+  int margin = 80;
+  int graph_height = (height - 3 * margin) / 2;
 
-  cv::line(image, cv::Point(margin, margin), cv::Point(margin, half_height - margin), cv::Scalar(0, 0, 0), 2);
-  cv::line(image, cv::Point(margin, half_height - margin), cv::Point(width - margin, half_height - margin), cv::Scalar(0, 0, 0), 2);
-  cv::line(image, cv::Point(margin, half_height + margin), cv::Point(margin, height - margin), cv::Scalar(0, 0, 0), 2);
-  cv::line(image, cv::Point(margin, height - margin), cv::Point(width - margin, height - margin), cv::Scalar(0, 0, 0), 2);
+  // 上半部分：Yaw
+  int yaw_top = margin;
+  int yaw_bottom = yaw_top + graph_height;
+  int pitch_top = yaw_bottom + margin;
+  int pitch_bottom = pitch_top + graph_height;
 
+  cv::line(image, cv::Point(margin, yaw_bottom), cv::Point(width - margin, yaw_bottom), cv::Scalar(0, 0, 0), 2);
+  cv::line(image, cv::Point(margin, pitch_bottom), cv::Point(width - margin, pitch_bottom), cv::Scalar(0, 0, 0), 2);
+  cv::line(image, cv::Point(margin, yaw_top), cv::Point(margin, yaw_bottom), cv::Scalar(0, 0, 0), 2);
+  cv::line(image, cv::Point(margin, pitch_top), cv::Point(margin, pitch_bottom), cv::Scalar(0, 0, 0), 2);
+
+  for (int t_ms = 0; t_ms <= 500; t_ms += 100) {
+    double t = t_ms * 0.001;
+    int x_pos = margin + static_cast<int>((t + 0.01) / 0.51 * (width - 2 * margin));
+    cv::line(image, cv::Point(x_pos, yaw_bottom - 5), cv::Point(x_pos, yaw_bottom + 5), cv::Scalar(0, 0, 0), 1);
+    cv::line(image, cv::Point(x_pos, pitch_bottom - 5), cv::Point(x_pos, pitch_bottom + 5), cv::Scalar(0, 0, 0), 1);
+    char buf[32];
+    sprintf(buf, "%.1f", t);
+    cv::putText(image, buf, cv::Point(x_pos - 10, yaw_bottom + 20), cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(0, 0, 0));
+  }
+
+  // ========== Yaw ==========
   double min_yaw = *std::min_element(debug.target_yaw_list.begin(), debug.target_yaw_list.end());
   double max_yaw = *std::max_element(debug.target_yaw_list.begin(), debug.target_yaw_list.end());
   double yaw_range = max_yaw - min_yaw;
   if (yaw_range < 0.01) yaw_range = 0.01;
+  min_yaw -= yaw_range * 0.1;
+  max_yaw += yaw_range * 0.1;
+  yaw_range = max_yaw - min_yaw;
 
-  for (int i = 1; i < auto_aim::HORIZON; i++) {
+  // 绘制目标Yaw（红色）
+  for (int i = 1; i < num_points; i++) {
     double t1 = time_points[i-1];
     double t2 = time_points[i];
     double y1 = debug.target_yaw_list[i-1];
     double y2 = debug.target_yaw_list[i];
 
-    int x1 = margin + (t1 / 1.0) * (width - 2 * margin);
-    int x2 = margin + (t2 / 1.0) * (width - 2 * margin);
-    int y1_pixel = half_height - margin - ((y1 - min_yaw) / yaw_range) * (half_height - 2 * margin);
-    int y2_pixel = half_height - margin - ((y2 - min_yaw) / yaw_range) * (half_height - 2 * margin);
+    int x1 = margin + static_cast<int>((t1 + 0.01) / 0.51 * (width - 2 * margin));
+    int x2 = margin + static_cast<int>((t2 + 0.01) / 0.51 * (width - 2 * margin));
+    int y1_pixel = yaw_bottom - static_cast<int>(((y1 - min_yaw) / yaw_range) * (graph_height - 20));
+    int y2_pixel = yaw_bottom - static_cast<int>(((y2 - min_yaw) / yaw_range) * (graph_height - 20));
 
-    cv::line(image, cv::Point(x1, y1_pixel), cv::Point(x2, y2_pixel), cv::Scalar(255, 0, 0), 2);
+    cv::line(image, cv::Point(x1, y1_pixel), cv::Point(x2, y2_pixel), cv::Scalar(0, 0, 255), 2);
   }
 
-  for (int i = 1; i < auto_aim::HORIZON; i++) {
+  // 绘制规划Yaw（蓝色）
+  for (int i = 1; i < num_points; i++) {
     double t1 = time_points[i-1];
     double t2 = time_points[i];
     double y1 = debug.plan_yaw_list[i-1];
     double y2 = debug.plan_yaw_list[i];
 
-    int x1 = margin + (t1 / 1.0) * (width - 2 * margin);
-    int x2 = margin + (t2 / 1.0) * (width - 2 * margin);
-    int y1_pixel = half_height - margin - ((y1 - min_yaw) / yaw_range) * (half_height - 2 * margin);
-    int y2_pixel = half_height - margin - ((y2 - min_yaw) / yaw_range) * (half_height - 2 * margin);
+    int x1 = margin + static_cast<int>((t1 + 0.01) / 0.51 * (width - 2 * margin));
+    int x2 = margin + static_cast<int>((t2 + 0.01) / 0.51 * (width - 2 * margin));
+    int y1_pixel = yaw_bottom - static_cast<int>(((y1 - min_yaw) / yaw_range) * (graph_height - 20));
+    int y2_pixel = yaw_bottom - static_cast<int>(((y2 - min_yaw) / yaw_range) * (graph_height - 20));
 
-    cv::line(image, cv::Point(x1, y1_pixel), cv::Point(x2, y2_pixel), cv::Scalar(0, 0, 255), 2);
+    cv::line(image, cv::Point(x1, y1_pixel), cv::Point(x2, y2_pixel), cv::Scalar(255, 0, 0), 2);
   }
 
-  for (int i = 0; i < auto_aim::HORIZON; i++) {
-    if (debug.fireable_list[i]) {
-      int x_pixel = margin + (time_points[i] / 1.0) * (width - 2 * margin);
-      int y_pixel = half_height - margin - ((debug.plan_yaw_list[i] - min_yaw) / yaw_range) * (half_height - 2 * margin);
-      cv::circle(image, cv::Point(x_pixel, y_pixel), 5, cv::Scalar(0, 255, 0), -1);
-    }
-  }
-
+  // ========== Pitch ==========
   double min_pitch = *std::min_element(debug.target_pitch_list.begin(), debug.target_pitch_list.end());
   double max_pitch = *std::max_element(debug.target_pitch_list.begin(), debug.target_pitch_list.end());
   double pitch_range = max_pitch - min_pitch;
   if (pitch_range < 0.01) pitch_range = 0.01;
+  min_pitch -= pitch_range * 0.1;
+  max_pitch += pitch_range * 0.1;
+  pitch_range = max_pitch - min_pitch;
 
-  for (int i = 1; i < auto_aim::HORIZON; i++) {
+  // 绘制目标Pitch（红色）
+  for (int i = 1; i < num_points; i++) {
     double t1 = time_points[i-1];
     double t2 = time_points[i];
     double y1 = debug.target_pitch_list[i-1];
     double y2 = debug.target_pitch_list[i];
 
-    int x1 = margin + (t1 / 1.0) * (width - 2 * margin);
-    int x2 = margin + (t2 / 1.0) * (width - 2 * margin);
-    int y1_pixel = height - margin - ((y1 - min_pitch) / pitch_range) * (half_height - 2 * margin);
-    int y2_pixel = height - margin - ((y2 - min_pitch) / pitch_range) * (half_height - 2 * margin);
+    int x1 = margin + static_cast<int>((t1 + 0.01) / 0.51 * (width - 2 * margin));
+    int x2 = margin + static_cast<int>((t2 + 0.01) / 0.51 * (width - 2 * margin));
+    int y1_pixel = pitch_bottom - static_cast<int>(((y1 - min_pitch) / pitch_range) * (graph_height - 20));
+    int y2_pixel = pitch_bottom - static_cast<int>(((y2 - min_pitch) / pitch_range) * (graph_height - 20));
 
-    cv::line(image, cv::Point(x1, y1_pixel), cv::Point(x2, y2_pixel), cv::Scalar(255, 0, 0), 2);
+    cv::line(image, cv::Point(x1, y1_pixel), cv::Point(x2, y2_pixel), cv::Scalar(0, 0, 255), 2);
   }
 
-  for (int i = 1; i < auto_aim::HORIZON; i++) {
+  // 绘制规划Pitch（蓝色）
+  for (int i = 1; i < num_points; i++) {
     double t1 = time_points[i-1];
     double t2 = time_points[i];
     double y1 = debug.plan_pitch_list[i-1];
     double y2 = debug.plan_pitch_list[i];
 
-    int x1 = margin + (t1 / 1.0) * (width - 2 * margin);
-    int x2 = margin + (t2 / 1.0) * (width - 2 * margin);
-    int y1_pixel = height - margin - ((y1 - min_pitch) / pitch_range) * (half_height - 2 * margin);
-    int y2_pixel = height - margin - ((y2 - min_pitch) / pitch_range) * (half_height - 2 * margin);
+    int x1 = margin + static_cast<int>((t1 + 0.01) / 0.51 * (width - 2 * margin));
+    int x2 = margin + static_cast<int>((t2 + 0.01) / 0.51 * (width - 2 * margin));
+    int y1_pixel = pitch_bottom - static_cast<int>(((y1 - min_pitch) / pitch_range) * (graph_height - 20));
+    int y2_pixel = pitch_bottom - static_cast<int>(((y2 - min_pitch) / pitch_range) * (graph_height - 20));
 
-    cv::line(image, cv::Point(x1, y1_pixel), cv::Point(x2, y2_pixel), cv::Scalar(0, 0, 255), 2);
+    cv::line(image, cv::Point(x1, y1_pixel), cv::Point(x2, y2_pixel), cv::Scalar(255, 0, 0), 2);
   }
 
-  for (int i = 0; i < auto_aim::HORIZON; i++) {
+  // ========== 发射点 ==========
+  for (int i = 0; i < num_points; i++) {
     if (debug.fireable_list[i]) {
-      int x_pixel = margin + (time_points[i] / 1.0) * (width - 2 * margin);
-      int y_pixel = height - margin - ((debug.plan_pitch_list[i] - min_pitch) / pitch_range) * (half_height - 2 * margin);
-      cv::circle(image, cv::Point(x_pixel, y_pixel), 5, cv::Scalar(0, 255, 0), -1);
+      double t = time_points[i];
+      int x_pos = margin + static_cast<int>((t + 0.01) / 0.51 * (width - 2 * margin));
+
+      double yaw = debug.plan_yaw_list[i];
+      int y_yaw = yaw_bottom - static_cast<int>(((yaw - min_yaw) / yaw_range) * (graph_height - 20));
+      cv::circle(image, cv::Point(x_pos, y_yaw), 5, cv::Scalar(0, 255, 0), -1);
+
+      double pitch = debug.plan_pitch_list[i];
+      int y_pitch = pitch_bottom - static_cast<int>(((pitch - min_pitch) / pitch_range) * (graph_height - 20));
+      cv::circle(image, cv::Point(x_pos, y_pitch), 5, cv::Scalar(0, 255, 0), -1);
     }
   }
 
+  // ========== 标签 ==========
   cv::putText(image, "Time (s)", cv::Point(width/2 - 30, height - 10), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 0));
-  cv::putText(image, "Yaw (rad)", cv::Point(10, half_height/2), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 0), 1, cv::LINE_AA, true);
-  cv::putText(image, "Pitch (rad)", cv::Point(10, half_height + half_height/2), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 0), 1, cv::LINE_AA, true);
-  cv::putText(image, "Target Yaw", cv::Point(width - 120, 30), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255, 0, 0));
-  cv::putText(image, "Plan Yaw", cv::Point(width - 120, 50), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 255));
-  cv::putText(image, "Fire Point", cv::Point(width - 120, 70), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 255, 0));
+  cv::putText(image, "Yaw (rad)", cv::Point(15, yaw_top + 20), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 0));
+  cv::putText(image, "Pitch (rad)", cv::Point(15, pitch_top + 20), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 0));
 
-  // 显示图像
-  cv::imshow("MPC Planner Visualization", image);
+  int legend_x = width - 180;
+  cv::rectangle(image, cv::Point(legend_x - 10, 10), cv::Point(width - 10, 110), cv::Scalar(240, 240, 240), -1);
+  cv::rectangle(image, cv::Point(legend_x - 10, 10), cv::Point(width - 10, 110), cv::Scalar(200, 200, 200), 1);
+
+  cv::line(image, cv::Point(legend_x, 30), cv::Point(legend_x + 25, 30), cv::Scalar(0, 0, 255), 3);
+  cv::putText(image, "Target", cv::Point(legend_x + 35, 35), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 0));
+
+  cv::line(image, cv::Point(legend_x, 55), cv::Point(legend_x + 25, 55), cv::Scalar(255, 0, 0), 3);
+  cv::putText(image, "Planner", cv::Point(legend_x + 35, 60), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 0));
+
+  cv::circle(image, cv::Point(legend_x + 12, 82), 5, cv::Scalar(0, 255, 0), -1);
+  cv::putText(image, "Fireable", cv::Point(legend_x + 35, 87), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 0));
+
+  char param_text[128];
+  sprintf(param_text, "d=%.1fm w=%.1f rad/s", d, w);
+  cv::putText(image, param_text, cv::Point(10, height - 25), cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(100, 100, 100));
+
+  cv::imshow("Explicit Deceleration Planner", image);
   cv::waitKey(0);
 
   return 0;

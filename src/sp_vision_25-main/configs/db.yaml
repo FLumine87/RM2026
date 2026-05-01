@@ -52,7 +52,7 @@ first_tolerance: 3 # 近距离射击容差，degree
 second_tolerance: 1.5 # 远距离射击容差，degree
 judge_distance: 2 #距离判断阈值
 auto_fire: true # 是否由自瞄控制射击
-max_fire_yaw_angle: 5 # 允许开火的最大装甲板偏航角，degree
+max_fire_yaw_angle: 5 # 允许开火的装甲板偏航角阈值，degree
 
 camera_name: "hikrobot"
 exposure_ms: 1
@@ -100,7 +100,7 @@ convergence_thresh: 0.1
 mid_ratio: 0.9
 
 # 显式方案参数
-transition_ratio: 0.3  # 过渡段比例 (0.0=最小化过渡, 1.0=最大化过渡)
+transition_ratio: 0.3  # 过渡段时间调整 (0.0=最小过渡满足动力学约束, 1.0=最大过渡无跟随段)
 
 # 动力学约束
 max_yaw_acc: 50 #20~100

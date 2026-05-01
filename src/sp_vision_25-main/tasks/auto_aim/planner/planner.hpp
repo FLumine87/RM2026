@@ -10,11 +10,19 @@
 
 namespace auto_aim
 {
-constexpr double DT = 0.01;
-constexpr int HALF_HORIZON = 50;
-constexpr int HORIZON = HALF_HORIZON * 2;
+constexpr double DT = 0.001;  // 1ms 步长
+constexpr int TIME_MIN = -1;   // 时间轴起点（防止越界）
+constexpr int TIME_MAX = 501;  // 时间轴终点
+constexpr int TIME_RANGE = TIME_MAX - TIME_MIN + 1;
 
-using Trajectory = Eigen::Matrix<double, 4, HORIZON>;  // yaw, yaw_vel, pitch, pitch_vel
+struct State {
+    double yaw;
+    double yaw_vel;
+    double yaw_acc;
+    double pitch;
+    double pitch_vel;
+    double pitch_acc;
+};
 
 struct Plan
 {
@@ -38,13 +46,6 @@ struct PlanDebug
   std::vector<float> plan_yaw_list;
   std::vector<float> plan_pitch_list;
   std::vector<bool> fireable_list;
-};
-
-// 状态结构体
-struct State {
-    double pos;   // 位置
-    double vel;   // 速度
-    double acc;   // 加速度
 };
 
 // 五次多项式类
@@ -73,13 +74,20 @@ public:
     double max_acc(double T) const;
 };
 
-// 切换点信息结构体
-struct SwitchInfo {
-    int idx;                    // 切换点位置
-    int start_idx;              // 过渡段起点
-    int end_idx;                // 过渡段终点
-    double T;                   // 过渡时间
-    QuinticPolynomial yaw_poly; // yaw轴多项式
+// 切换点事件结构
+struct SwitchEvent {
+    int t_switch;          // 切换点时间（单位：DT步）
+    int t_start;           // 过渡段开始时间
+    int t_end;             // 过渡段结束时间
+    double yaw_start;      // 过渡段起点yaw
+    double yaw_vel_start;  // 过渡段起点角速度
+    double yaw_end;        // 过渡段终点yaw
+    double yaw_vel_end;    // 过渡段终点角速度
+    double pitch_start;    // 过渡段起点pitch
+    double pitch_vel_start;// 过渡段起点pitch角速度
+    double pitch_end;      // 过渡段终点pitch
+    double pitch_vel_end;  // 过渡段终点pitch角速度
+    QuinticPolynomial yaw_poly;  // yaw轴多项式
     QuinticPolynomial pitch_poly; // pitch轴多项式
 };
 
@@ -89,49 +97,36 @@ public:
   Eigen::Vector4d debug_xyza;
   Planner(const std::string & config_path);
 
-  Plan plan(Target target, double bullet_speed);
   Plan plan(Target target, double bullet_speed, double current_yaw, double current_pitch);
+  Plan plan(Target target, double bullet_speed);
   Plan plan(std::optional<Target> target, double bullet_speed);
   Plan plan(std::optional<Target> target, double bullet_speed, double current_yaw, double current_pitch);
-  
+
   PlanDebug debug(Target target, double bullet_speed);
 
 private:
-  // 参数
-  double yaw_offset_;
-  double pitch_offset_;
-  double fire_thresh_;
-  double convergence_thresh_;
-  double decision_speed_;
-  double high_speed_delay_time_;
-  double low_speed_delay_time_;
-  double fire_delay_;
-  double mid_ratio_;
+  // 配置参数（带默认值）
+  double yaw_offset_{0.0};
+  double pitch_offset_{0.0};
+  double fire_thresh_{0.02};
+  double convergence_thresh_{0.1};
+  double decision_speed_{8.0};
+  double high_speed_delay_time_{0.025};
+  double low_speed_delay_time_{0.015};
+  double fire_delay_{0.01};
+  double mid_ratio_{0.4};
+  double transition_ratio_{0.3};
+  double max_yaw_acc_{50.0};
+  double max_pitch_acc_{100.0};
   
-  // 显式方案参数
-  double transition_ratio_;     // 过渡段比例
-  
-  // 动力学约束
-  double max_yaw_acc_;
-  double max_pitch_acc_;
-  
-  bool skip_convergence_check_;
-  std::vector<int> switch_points_;
-  std::vector<SwitchInfo> switch_info_list_;
-  
-  // 轨迹信息（用于预计算）
-  Trajectory shoot_traj_;
-  double yaw0_;
+  bool skip_convergence_check_{false};
+  std::vector<SwitchEvent> switch_events_;
 
   // 核心方法
   Eigen::Matrix<double, 2, 1> aim(const Target & target, double bullet_speed, int & selected_armor_idx);
-  Trajectory get_trajectory(Target & target, double yaw0, double bullet_speed);
-  
-  // 显式方案核心方法
-  void precompute_switch_info(Target& target);
-  State get_yaw_state_at(int idx, const Trajectory& traj);
-  State get_pitch_state_at(int idx, const Trajectory& traj);
-  bool is_in_valid_fire_region(int shoot_offset);
+  void precompute_switch_events(Target& target, double bullet_speed, double yaw0);
+  State get_state_at_time(Target& target, double bullet_speed, double yaw0, double time);
+  State get_follow_state(Target& target, double bullet_speed, double yaw0, int t);
 };
 
 }  // namespace auto_aim
