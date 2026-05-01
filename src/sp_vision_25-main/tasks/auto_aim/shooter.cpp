@@ -44,8 +44,7 @@ bool Shooter::shoot(
     double distance = std::sqrt(tools::square(target_x) + tools::square(target_y));
     double fly_time = distance / bullet_speed + fire_delay_;
     double future_armor_angle = tools::limit_rad(armor_angle + armor_yaw_vel * fly_time);
-    double armor_yaw_diff = std::abs(tools::limit_rad(future_armor_angle - std::atan2(target_y, target_x)));
-    if (armor_yaw_diff < max_fire_yaw_angle_) {
+    if (future_armor_angle < max_fire_yaw_angle_) {
       last_command_ = command;
       return true;
     }
