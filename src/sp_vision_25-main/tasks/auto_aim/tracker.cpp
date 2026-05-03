@@ -89,7 +89,11 @@ std::list<Target> Tracker::track(
     return {};
   }
 
-  if (state_ == "lost") return {};
+// 修改前
+// if (state_ == "lost") return {};
+
+// 修改后
+if (state_ == "lost" || state_ == "detecting") return {};  // detecting 状态也返回空
 
   std::list<Target> targets = {target_};
   return targets;

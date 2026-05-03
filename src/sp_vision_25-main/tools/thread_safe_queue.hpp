@@ -6,6 +6,7 @@
 #include <iostream>
 #include <mutex>
 #include <queue>
+#include <chrono>
 
 namespace tools
 {
@@ -36,6 +37,23 @@ public:
     not_empty_condition_.notify_all();
   }
 
+  bool push(const T & value, std::chrono::milliseconds timeout)
+  {
+    std::unique_lock<std::mutex> lock(mutex_);
+
+    if (queue_.size() >= max_size_) {
+      if (PopWhenFull) {
+        queue_.pop();
+      } else {
+        return false;
+      }
+    }
+
+    queue_.push(value);
+    not_empty_condition_.notify_all();
+    return true;
+  }
+
   void pop(T & value)
   {
     std::unique_lock<std::mutex> lock(mutex_);
@@ -49,6 +67,24 @@ public:
 
     value = queue_.front();
     queue_.pop();
+  }
+
+  bool pop(T & value, std::chrono::milliseconds timeout)
+  {
+    std::unique_lock<std::mutex> lock(mutex_);
+
+    if (!not_empty_condition_.wait_for(lock, timeout, [this] { return !queue_.empty(); })) {
+      return false;
+    }
+
+    if (queue_.empty()) {
+      std::cerr << "Error: Attempt to pop from an empty queue." << std::endl;
+      return false;
+    }
+
+    value = queue_.front();
+    queue_.pop();
+    return true;
   }
 
   T pop()

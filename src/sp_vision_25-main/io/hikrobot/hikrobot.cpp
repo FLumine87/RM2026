@@ -141,6 +141,8 @@ void HikRobot::capture_start()
       cv::cvtColor(img, dst_image, type_map.at(pixel_type));
       img = dst_image;
 
+      // cv::rotate(img, img, cv::ROTATE_180);
+
       queue_.push({img, timestamp});
 
       ret = MV_CC_FreeImageBuffer(handle_, &raw);

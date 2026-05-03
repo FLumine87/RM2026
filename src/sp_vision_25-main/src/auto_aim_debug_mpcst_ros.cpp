@@ -429,7 +429,7 @@ int main(int argc, char * argv[])
           
           // 根据角速度选择合适的延迟时间
           // double delay_time = std::abs(angular_velocity) > decision_speed ? high_speed_delay : low_speed_delay;
-          double delay_time = 0.1;
+          double delay_time =0.1;
           // 线性预测：基于旋转中心平移的yaw预测
           
           // 对目标进行预测，预测时间为总延迟
@@ -537,8 +537,10 @@ int main(int argc, char * argv[])
 
     solver.set_R_gimbal2world(q);
     
-    Eigen::Vector3d t_camera2world = solver.R_gimbal2world().transpose() * Eigen::Vector3d(0.145, 0, 0.07);
-    ros2_publisher->publish_tf(q, t_camera2world);
+    // 使用单位矩阵作为旋转，共原点（平移为零）
+    Eigen::Quaterniond unit_quat(1, 0, 0, 0); // 单位四元数
+    Eigen::Vector3d zero_translation(0, 0, 0); // 零平移
+    ros2_publisher->publish_tf(unit_quat, zero_translation);
     
     // 发布云台反馈消息
     uint8_t mode_value = 0;

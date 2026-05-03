@@ -1,4 +1,5 @@
 #include <chrono>
+#include <mutex>
 #include <opencv2/opencv.hpp>
 #include <thread>
 
@@ -21,12 +22,20 @@
 #include "tools/math_tools.hpp"
 #include "tools/plotter.hpp"
 #include "tools/recorder.hpp"
+#include "tools/thread_safe_queue.hpp"
 
 const std::string keys =
   "{help h usage ? | | 输出命令行参数说明}"
   "{@config-path   | | yaml配置文件路径 }";
 
 using namespace std::chrono_literals;
+
+// 录制帧数据结构
+struct RecordFrame {
+  cv::Mat img;
+  Eigen::Quaterniond q;
+  std::chrono::steady_clock::time_point timestamp;
+};
 
 int main(int argc, char * argv[])
 {
@@ -39,7 +48,10 @@ int main(int argc, char * argv[])
 
   tools::Exiter exiter;
   tools::Plotter plotter;
-  tools::Recorder recorder;
+  
+  // 创建录制器（15fps，启用录制，启用压缩）
+  // 第三个参数为是否启用压缩，设为false可完全禁用压缩
+  tools::Recorder recorder(15, true, true);
 
   io::Gimbal gimbal(config_path);
   io::Camera camera(config_path);
@@ -67,6 +79,20 @@ int main(int argc, char * argv[])
   std::atomic<io::GimbalMode> mode{io::GimbalMode::IDLE};
   auto last_mode{io::GimbalMode::IDLE};
 
+  // 录制队列
+  tools::ThreadSafeQueue<RecordFrame> record_queue(3);
+
+  // 录制线程
+  auto record_thread = std::thread([&]() {
+    while (!quit) {
+      RecordFrame frame;
+      if (record_queue.pop(frame, 100ms)) {
+        recorder.record(frame.img, frame.q, frame.timestamp);
+      }
+    }
+  });
+
+  // 规划线程
   auto plan_thread = std::thread([&]() {
     auto t0 = std::chrono::steady_clock::now();
     uint16_t last_bullet_count = 0;
@@ -87,6 +113,7 @@ int main(int argc, char * argv[])
     }
   });
 
+  // 主线程：相机采集 + 视觉处理
   while (!exiter.exit()) {
     mode = gimbal.mode();
 
@@ -98,7 +125,13 @@ int main(int argc, char * argv[])
     camera.read(img, t);
     auto q = gimbal.q(t);
     auto gs = gimbal.state();
-    recorder.record(img, q, t);
+    
+    // 将帧放入录制队列（非阻塞）
+    RecordFrame frame{img.clone(), q, t};
+    if (!record_queue.push(frame, 0ms)) {
+      tools::logger()->warn("Record queue full, dropping frame");
+    }
+    
     solver.set_R_gimbal2world(q);
 
     /// 自瞄
@@ -138,7 +171,11 @@ int main(int argc, char * argv[])
   }
 
   quit = true;
+  
+  // 等待所有线程结束
   if (plan_thread.joinable()) plan_thread.join();
+  if (record_thread.joinable()) record_thread.join();
+  
   gimbal.send(false, false, 0, 0, 0, 0, 0, 0);
 
   return 0;

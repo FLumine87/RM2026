@@ -27,14 +27,12 @@ Gimbal::Gimbal(const std::string & config_path)
 
   queue_.pop();
   tools::logger()->info("[Gimbal] First q received.");
-
 }
 
 Gimbal::~Gimbal()
 {
   quit_ = true;
   if (thread_.joinable()) thread_.join();
-
   serial_.close();
 }
 
@@ -92,7 +90,6 @@ Eigen::Quaterniond Gimbal::q(std::chrono::steady_clock::time_point t)
     auto [q_a, t_a] = queue_.pop();
     auto [q_b, t_b] = queue_.front();
     auto t_ab = tools::delta_time(t_a, t_b);
-
     if (t > t_b) {
       continue;
     }
@@ -104,7 +101,6 @@ Eigen::Quaterniond Gimbal::q(std::chrono::steady_clock::time_point t)
       t_b = new_t_b;
       t_ab = tools::delta_time(t_a, t_b);
     }
-
     auto t_ac = tools::delta_time(t_a, t);
     auto k = t_ac / t_ab;
     Eigen::Quaterniond q_c = q_a.slerp(k, q_b).normalized();
@@ -148,7 +144,6 @@ void Gimbal::send(
   tx_data_.pitch = pitch;
   tx_data_.pitch_vel = pitch_vel;
   tx_data_.pitch_acc = pitch_acc;
-
   tx_data_.crc16 = tools::get_crc16(
     reinterpret_cast<uint8_t *>(&tx_data_), sizeof(tx_data_) - sizeof(tx_data_.crc16));
 
@@ -171,36 +166,43 @@ bool Gimbal::read(uint8_t * buffer, size_t size)
 
 void Gimbal::read_thread()
 {
-  tools::logger()->info("[Gimbal] read_thread started.");
-
+  // 
   std::vector<uint8_t> buffer;
   buffer.reserve(512);
-  uint8_t temp_raw[256];
+  uint8_t temp_raw[256]; // 
   int crc_error_cnt = 0;
   int header_error_cnt = 0;
 
   while (!quit_) {
+    // 1. 
     int n = serial_.read(temp_raw, sizeof(temp_raw));
     if (n <= 0) {
+      // 
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
       continue;
     }
 
+    // 
     buffer.insert(buffer.end(), temp_raw, temp_raw + n);
 
+    // 2. ״
     while (buffer.size() >= sizeof(rx_data_)) {
+      // 'S' 'P' 
       if (buffer[0] == 'S' && buffer[1] == 'P') {
         auto t = std::chrono::steady_clock::now();
-
+        // CRC
         if (tools::check_crc16(buffer.data(), sizeof(rx_data_))) {
+          //
           memcpy(&rx_data_, buffer.data(), sizeof(rx_data_));
 
           Eigen::Quaterniond q(rx_data_.q[0], rx_data_.q[1], rx_data_.q[2], rx_data_.q[3]);
           double q_norm_sq = q.w() * q.w() + q.x() * q.x() + q.y() * q.y() + q.z() * q.z();
 
           if (q_norm_sq < 1.1 && q_norm_sq > 0.9 && !std::isnan(q_norm_sq)) {
-            queue_.push({q, t});
+            // 只有姿态合法时，才将其推入插值队列
+            queue_.push({ q, t });
           } else {
+            // 非法数据（如全0）直接拦截，视觉主线程会自动安全挂起等待
             tools::logger()->warn("[Gimbal] 拦截到非法四元数包 (可能 MCU 刚重启)，已丢弃!");
           }
 
@@ -247,20 +249,21 @@ void Gimbal::read_thread()
           crc_error_cnt++;
           tools::logger()->warn("[Gimbal] CRC Failed! Count: {}", crc_error_cnt);
         }
-
         buffer.erase(buffer.begin(), buffer.begin() + sizeof(rx_data_));
-      } else {
+      }
+      else {
+        //
         header_error_cnt++;
         buffer.erase(buffer.begin());
       }
     }
 
+    // 
     if (buffer.size() > 512) {
       tools::logger()->error("[Gimbal] Buffer overflow (size: {}). Clearing...", buffer.size());
       buffer.clear();
     }
   }
-
   tools::logger()->info("[Gimbal] read_thread stopped.");
 }
 
@@ -276,7 +279,7 @@ void Gimbal::reconnect()
     }
 
     try {
-      serial_.open();
+      serial_.open();  // 尝试重新打开
       queue_.clear();
       tools::logger()->info("[Gimbal] Reconnected serial successfully.");
       break;
@@ -286,7 +289,5 @@ void Gimbal::reconnect()
     }
   }
 }
-
-
 
 }  // namespace io
