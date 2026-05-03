@@ -48,26 +48,6 @@ GimbalState Gimbal::state() const
   return state_;
 }
 
-GimbalToVision Gimbal::GetGimbalPackage() const
-{
-  std::lock_guard<std::mutex> lock(mutex_);
-  return rx_data_;
-}
-
-uint8_t Gimbal::GetFireMode() const
-{
-  return tx_data_.mode;
-}
-
-void Gimbal::SetGimbalPackage(VisionToGimbal recv_data)
-{
-  tx_data_.vx = recv_data.vx;
-  tx_data_.vy = recv_data.vy;
-  tx_data_.posture = recv_data.posture;
-  tx_data_.rotation_posture = recv_data.rotation_posture;
-  tx_data_.reverse = recv_data.reverse;
-}
-
 std::string Gimbal::str(GimbalMode mode) const
 {
   switch (mode) {
@@ -166,44 +146,35 @@ bool Gimbal::read(uint8_t * buffer, size_t size)
 
 void Gimbal::read_thread()
 {
-  // 
   std::vector<uint8_t> buffer;
   buffer.reserve(512);
-  uint8_t temp_raw[256]; // 
+  uint8_t temp_raw[256];
   int crc_error_cnt = 0;
   int header_error_cnt = 0;
 
   while (!quit_) {
-    // 1. 
     int n = serial_.read(temp_raw, sizeof(temp_raw));
     if (n <= 0) {
-      // 
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
       continue;
     }
 
-    // 
     buffer.insert(buffer.end(), temp_raw, temp_raw + n);
 
-    // 2. ״
     while (buffer.size() >= sizeof(rx_data_)) {
-      // 'S' 'P' 
       if (buffer[0] == 'S' && buffer[1] == 'P') {
         auto t = std::chrono::steady_clock::now();
-        // CRC
+
         if (tools::check_crc16(buffer.data(), sizeof(rx_data_))) {
-          //
           memcpy(&rx_data_, buffer.data(), sizeof(rx_data_));
 
           Eigen::Quaterniond q(rx_data_.q[0], rx_data_.q[1], rx_data_.q[2], rx_data_.q[3]);
           double q_norm_sq = q.w() * q.w() + q.x() * q.x() + q.y() * q.y() + q.z() * q.z();
 
           if (q_norm_sq < 1.1 && q_norm_sq > 0.9 && !std::isnan(q_norm_sq)) {
-            // 只有姿态合法时，才将其推入插值队列
-            queue_.push({ q, t });
+            queue_.push({q, t});
           } else {
-            // 非法数据（如全0）直接拦截，视觉主线程会自动安全挂起等待
-            tools::logger()->warn("[Gimbal] 拦截到非法四元数包 (可能 MCU 刚重启)，已丢弃!");
+            tools::logger()->warn("[Gimbal] Invalid quaternion (MCU may have restarted), dropped!");
           }
 
           std::lock_guard<std::mutex> lock(mutex_);
@@ -250,15 +221,12 @@ void Gimbal::read_thread()
           tools::logger()->warn("[Gimbal] CRC Failed! Count: {}", crc_error_cnt);
         }
         buffer.erase(buffer.begin(), buffer.begin() + sizeof(rx_data_));
-      }
-      else {
-        //
+      } else {
         header_error_cnt++;
         buffer.erase(buffer.begin());
       }
     }
 
-    // 
     if (buffer.size() > 512) {
       tools::logger()->error("[Gimbal] Buffer overflow (size: {}). Clearing...", buffer.size());
       buffer.clear();

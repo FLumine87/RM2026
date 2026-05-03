@@ -59,8 +59,6 @@
 
 using namespace std::chrono_literals;
 
-
-
 class ROS2Publisher : public rclcpp::Node
 {
 public:
@@ -129,6 +127,9 @@ public:
     armor_marker_.color.r = 1.0;
   }
 
+  //================================================================
+  // 功能块1: TF与图像发布
+  //================================================================
   void publish_tf(const Eigen::Quaterniond & q_gimbal)
   {
     tf2_msgs::msg::TFMessage tf_msg;
@@ -207,6 +208,9 @@ public:
     //   target_publisher_->publish(*msg);
   }
 
+  //================================================================
+  // 功能块2: 视觉目标发布 (armor/Target/TargetSentry)
+  //================================================================
   void publish_armor_msg(const std::vector<auto_aim::Armor> & armors)
   {
     auto msg = std::make_shared<auto_aim_interfaces::msg::Armors>();
@@ -280,6 +284,32 @@ public:
     target_msg_publisher_->publish(*msg);
   }
 
+  void publish_target_sentry(const auto_aim::Target & target)
+  {
+    auto target_sentry_msg = std::make_shared<auto_aim_interfaces::msg::TargetSentry>();
+    target_sentry_msg->header.stamp = this->now();
+    target_sentry_msg->header.frame_id = "odom";
+    target_sentry_msg->tracking = true;
+    target_sentry_msg->position.x = target.ekf_x()[0];
+    target_sentry_msg->position.y = target.ekf_x()[2];
+    target_sentry_msg->position.z = target.ekf_x()[4];
+
+    target_sentry_pub_->publish(*target_sentry_msg);
+  }
+
+  void publish_empty_target_sentry()
+  {
+    auto target_sentry_msg = std::make_shared<auto_aim_interfaces::msg::TargetSentry>();
+    target_sentry_msg->header.stamp = this->now();
+    target_sentry_msg->header.frame_id = "odom";
+    target_sentry_msg->tracking = false;
+
+    target_sentry_pub_->publish(*target_sentry_msg);
+  }
+
+  //================================================================
+  // 功能块3: 云台状态发布 (feedback/joint_state/sentry_status)
+  //================================================================
   void publish_gimbal_msg(const auto_aim::Plan & plan)
   {
     auto msg = std::make_shared<auto_aim_interfaces::msg::Gimbal>();
@@ -362,29 +392,9 @@ public:
     sentry_status_pub_->publish(*sentry_status_msg);
   }
 
-  void publish_target_sentry(const auto_aim::Target & target)
-  {
-    auto target_sentry_msg = std::make_shared<auto_aim_interfaces::msg::TargetSentry>();
-    target_sentry_msg->header.stamp = this->now();
-    target_sentry_msg->header.frame_id = "odom";
-    target_sentry_msg->tracking = true;
-    target_sentry_msg->position.x = target.ekf_x()[0];
-    target_sentry_msg->position.y = target.ekf_x()[2];
-    target_sentry_msg->position.z = target.ekf_x()[4];
-    
-    target_sentry_pub_->publish(*target_sentry_msg);
-  }
-
-  void publish_empty_target_sentry()
-  {
-    auto target_sentry_msg = std::make_shared<auto_aim_interfaces::msg::TargetSentry>();
-    target_sentry_msg->header.stamp = this->now();
-    target_sentry_msg->header.frame_id = "odom";
-    target_sentry_msg->tracking = false;
-    
-    target_sentry_pub_->publish(*target_sentry_msg);
-  }
-
+  //================================================================
+  // 功能块4: 导航数据订阅回调与获取
+  //================================================================
   void cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr msg)
   {
     std::lock_guard<std::mutex> lock(nav_mutex_);
@@ -499,6 +509,10 @@ public:
     marker_pub_->publish(marker_array);
   }
 
+  //================================================================
+  // 功能块5: 可视化标记发布 (RViz标记)
+  //================================================================
+
   rclcpp::Publisher<tf2_msgs::msg::TFMessage>::SharedPtr tf_publisher_;
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr image_publisher_;
   // rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr armor_publisher_;
@@ -568,7 +582,10 @@ int main(int argc, char * argv[])
 
   std::atomic<bool> quit = false;
   std::thread ros2_spin_thread([&]() { rclcpp::spin(ros2_publisher); });
-  
+
+  //================================================================
+  // 功能块: 规划线程 - 视觉规划 + 导航数据获取 + 下行发送
+  //================================================================
   auto plan_thread = std::thread([&]() {
     auto t0 = std::chrono::steady_clock::now();
     uint16_t last_bullet_count = 0;
@@ -589,7 +606,6 @@ int main(int argc, char * argv[])
       uint8_t posture = ros2_publisher->get_nav_posture();
       uint8_t rotation_posture = ros2_publisher->get_nav_rotation_posture();
 
-      // 发送到云台
       io::VisionToGimbal msg;
       msg.mode = plan.control ? (plan.fire ? 2 : 1) : 0;
       msg.yaw = plan.yaw;
@@ -603,7 +619,7 @@ int main(int argc, char * argv[])
       msg.posture = posture;
       msg.rotation_posture = rotation_posture;
       msg.reverse = 0;
-      
+
       gimbal.send(msg);
 
       auto fired = gs.bullet_count > last_bullet_count;
@@ -652,11 +668,11 @@ int main(int argc, char * argv[])
   std::chrono::steady_clock::time_point t;
   std::chrono::steady_clock::time_point t0 = std::chrono::steady_clock::now();
 
+  //================================================================
+  // 功能块: 主循环 - 图像获取、检测跟踪、ROS上行发布、可视化
+  //================================================================
   while (!exiter.exit()) {
     camera.read(img, t);
-    
-    // 图像旋转180度（如果相机安装方向颠倒）
-    cv::rotate(img, img, cv::ROTATE_180);
     auto q = gimbal.q(t);
     auto gs = gimbal.state();
     auto mode = gimbal.mode();
@@ -665,6 +681,7 @@ int main(int argc, char * argv[])
     
     ros2_publisher->publish_tf(q);
     
+//================================================================
     // 发布云台反馈消息
     uint8_t mode_value = 0;
     switch (mode) {
@@ -678,7 +695,8 @@ int main(int argc, char * argv[])
     // 发布关节状态和哨兵状态消息
     ros2_publisher->publish_joint_state(gs);
     ros2_publisher->publish_sentry_status(gs);
-    
+//================================================================  
+  
     auto armors = yolo.detect(img);
     auto targets = tracker.track(armors, t);
     if (!targets.empty())
@@ -714,7 +732,7 @@ int main(int argc, char * argv[])
       Eigen::Vector3d position(target.ekf_x()[0], target.ekf_x()[2], target.ekf_x()[4]);
       Eigen::Vector3d velocity(target.ekf_x()[1], target.ekf_x()[3], target.ekf_x()[5]);
       Eigen::Vector3d angular_velocity(0, 0, target.ekf_x()[7]);
-      
+
       std::vector<Eigen::Vector3d> armor_positions;
       std::vector<double> armor_yaws;
       for (const auto & xyza : armor_xyza_list) {
@@ -760,6 +778,5 @@ int main(int argc, char * argv[])
 
   return 0;
 }
-
 // ls -la /dev/shm/fastrtps*
 // sudo rm -f /dev/shm/fastrtps*
