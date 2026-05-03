@@ -502,12 +502,12 @@ Eigen::Matrix<double, 2, 1> Planner::aim(
 
   const auto xyza_list = target.armor_xyza_list();
 
-  tools::logger()->debug("[Planner::aim] Target: armor_num: {}, name: {}", target.armor_num(), static_cast<int>(target.name));
+  // tools::logger()->debug("[Planner::aim] Target: armor_num: {}, name: {}", target.armor_num(), static_cast<int>(target.name));
   
   // 打印 EKF 状态用于调试
   auto ekf_x = target.ekf_x();
-  tools::logger()->debug("[Planner::aim] EKF state: x={:.3f}, y={:.3f}, z={:.3f}, angle={:.3f}, r={:.3f}", 
-      ekf_x[0], ekf_x[2], ekf_x[4], ekf_x[6], ekf_x[8]);
+  // tools::logger()->debug("[Planner::aim] EKF state: x={:.3f}, y={:.3f}, z={:.3f}, angle={:.3f}, r={:.3f}", 
+      // ekf_x[0], ekf_x[2], ekf_x[4], ekf_x[6], ekf_x[8]);
   
   for (int i = 0; i < static_cast<int>(xyza_list.size()); i++) {
     const auto & xyza = xyza_list[i];
@@ -515,8 +515,8 @@ Eigen::Matrix<double, 2, 1> Planner::aim(
     
     // 检查 bullet_traj 是否可解
     auto bullet_traj_check = tools::Trajectory(bullet_speed, dist, xyza[2]);
-    tools::logger()->debug("[Planner::aim] Armor {}: dist = {:.3f}, xyz = ({:.3f}, {:.3f}, {:.3f}), angle = {:.3f}, unsolvable = {}", 
-        i, dist, xyza[0], xyza[1], xyza[2], xyza[3], bullet_traj_check.unsolvable);
+    // tools::logger()->debug("[Planner::aim] Armor {}: dist = {:.3f}, xyz = ({:.3f}, {:.3f}, {:.3f}), angle = {:.3f}, unsolvable = {}", 
+        // i, dist, xyza[0], xyza[1], xyza[2], xyza[3], bullet_traj_check.unsolvable);
     
     if (dist < min_dist) {
       min_dist = dist;

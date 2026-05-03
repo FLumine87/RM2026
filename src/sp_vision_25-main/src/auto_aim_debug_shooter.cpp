@@ -13,21 +13,16 @@
 #include "tasks/auto_aim/solver.hpp"
 #include "tasks/auto_aim/tracker.hpp"
 #include "tasks/auto_aim/yolo.hpp"
+#include "tasks/auto_aim/aimer.hpp"
+#include "tasks/auto_aim/shooter.hpp"
 #include "tools/exiter.hpp"
 #include "tools/img_tools.hpp"
 #include "tools/logger.hpp"
 #include "tools/math_tools.hpp"
 #include "tools/plotter.hpp"
-#include "tools/recorder.hpp"
 #include "tools/thread_safe_queue.hpp"
 
 using namespace std::chrono_literals;
-
-struct RecordFrame {
-  cv::Mat img;
-  Eigen::Quaterniond q;
-  std::chrono::steady_clock::time_point timestamp;
-};
 
 const std::string keys =
   "{help h usage ? |                        | 输出命令行参数说明}"
@@ -37,7 +32,6 @@ int main(int argc, char * argv[])
 {
   tools::Exiter exiter;
   tools::Plotter plotter;
-  tools::Recorder recorder(15, true, true);
 
   cv::CommandLineParser cli(argc, argv, keys);
   auto config_path = cli.get<std::string>(0);
@@ -53,29 +47,21 @@ int main(int argc, char * argv[])
   auto_aim::Solver solver(config_path);
   auto_aim::Tracker tracker(config_path, solver);
   auto_aim::Planner planner(config_path);
+  auto_aim::Aimer aimer(config_path);
+  auto_aim::Shooter shooter(config_path);
 
   std::mutex plan_mutex;
   auto_aim::Plan latest_plan = {};
   Eigen::Vector4d latest_debug_xyza = Eigen::Vector4d::Zero();
   bool latest_plan_fire = false;
+  bool latest_shooter_fire = false;
   bool latest_final_fire = false;
+  bool latest_aimer_valid = false;
 
   tools::ThreadSafeQueue<std::list<auto_aim::Target>, true> targets_queue(1);
   targets_queue.push({});
 
-  tools::ThreadSafeQueue<RecordFrame> record_queue(3);
-
   std::atomic<bool> quit = false;
-
-  auto record_thread = std::thread([&]() {
-    while (!quit) {
-      RecordFrame frame;
-      if (record_queue.pop(frame, 100ms)) {
-        recorder.record(frame.img, frame.q, frame.timestamp);
-      }
-    }
-  });
-
   auto plan_thread = std::thread([&]() {
     auto t0 = std::chrono::steady_clock::now();
     uint16_t last_bullet_count = 0;
@@ -87,7 +73,21 @@ int main(int argc, char * argv[])
       auto target = targets.empty() ? std::nullopt : std::optional<auto_aim::Target>(targets.front());
       auto plan = planner.plan(target, gs.bullet_speed, gs.yaw, gs.pitch);
 
-      bool final_fire = plan.fire;
+      // Shooter 依赖 aimer.debug_aim_point.valid；这个 debug 程序不走 aimer 输出指令，
+      // 但仍需要调用一次以刷新 debug_aim_point。
+      (void)aimer.aim(targets, std::chrono::steady_clock::now(), gs.bullet_speed, true);
+
+      io::Command command;
+      command.control = plan.control;
+      command.shoot = plan.fire;
+      command.yaw = plan.yaw;
+      command.pitch = plan.pitch;
+
+      Eigen::Vector3d gimbal_pos(gs.yaw, gs.pitch, 0.0);
+
+      bool shooter_fire = shooter.shoot(command, aimer, targets, gimbal_pos, gs.bullet_speed);
+
+      bool final_fire = plan.fire;// && shooter_fire;
 
             // // 检查目标平移速度是否超过阈值
       // bool velocity_threshold_check = true;
@@ -136,7 +136,9 @@ int main(int argc, char * argv[])
         latest_plan = plan;
         latest_debug_xyza = planner.debug_xyza;
         latest_plan_fire = plan.fire;
+        latest_shooter_fire = shooter_fire;
         latest_final_fire = final_fire;
+        latest_aimer_valid = aimer.debug_aim_point.valid;
       }
 
       gimbal.send(
@@ -192,11 +194,6 @@ int main(int argc, char * argv[])
     camera.read(img, t);
     auto q = gimbal.q(t);
 
-    RecordFrame frame{img.clone(), q, t};
-    if (!record_queue.push(frame, 0ms)) {
-      tools::logger()->warn("Record queue full, dropping frame");
-    }
-
     solver.set_R_gimbal2world(q);
     auto armors = yolo.detect(img);
     auto targets = tracker.track(armors, t);
@@ -208,12 +205,14 @@ int main(int argc, char * argv[])
     auto_aim::Plan plan_copy;
     Eigen::Vector4d debug_xyza_copy;
     bool plan_fire_copy;
+    bool shooter_fire_copy;
     bool final_fire_copy;
     {
       std::lock_guard<std::mutex> lock(plan_mutex);
       plan_copy = latest_plan;
       debug_xyza_copy = latest_debug_xyza;
       plan_fire_copy = latest_plan_fire;
+      shooter_fire_copy = latest_shooter_fire;
       final_fire_copy = latest_final_fire;
     }
 
@@ -235,9 +234,9 @@ int main(int argc, char * argv[])
     }
 
     auto text = fmt::format(
-      "yaw: {:.2f} pitch: {:.2f} plan_fire: {} final: {}\ndist: {:.2f}",
+      "yaw: {:.2f} pitch: {:.2f}\nplan_fire: {} shooter: {} final: {}\ndist: {:.2f}",
       plan_copy.yaw, plan_copy.pitch,
-      plan_fire_copy, final_fire_copy,
+      plan_fire_copy, shooter_fire_copy, final_fire_copy,
       aim_xyza.head(3).norm());
     cv::putText(img, text, {10, 30}, cv::FONT_HERSHEY_SIMPLEX, 1.0, {0, 255, 0}, 2);
 
@@ -249,7 +248,6 @@ int main(int argc, char * argv[])
 
   quit = true;
   if (plan_thread.joinable()) plan_thread.join();
-  if (record_thread.joinable()) record_thread.join();
   gimbal.send(false, false, 0, 0, 0, 0, 0, 0);
 
   return 0;
