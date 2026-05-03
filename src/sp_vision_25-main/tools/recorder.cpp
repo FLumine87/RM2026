@@ -1,6 +1,9 @@
 #include "recorder.hpp"
 
+#include <chrono>
 #include <fmt/chrono.h>
+
+using namespace std::chrono_literals;
 
 #include <filesystem>
 #include <string>
