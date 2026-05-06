@@ -51,7 +51,7 @@ int main(int argc, char * argv[])
   
   // 创建录制器（15fps，启用录制，启用压缩）
   // 第三个参数为是否启用压缩，设为false可完全禁用压缩
-  tools::Recorder recorder(15, true, true);
+  tools::Recorder recorder(15, true);
 
   io::Gimbal gimbal(config_path);
   io::Camera camera(config_path);

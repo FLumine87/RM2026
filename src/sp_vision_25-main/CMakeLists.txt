@@ -45,6 +45,7 @@ add_executable(standard src/standard.cpp)
 add_executable(mt_standard src/mt_standard.cpp)
 add_executable(standard_mpc src/standard_mpc.cpp)
 add_executable(auto_aim_debug_mpc src/auto_aim_debug_mpc.cpp)
+add_executable(auto_aim_debug_shooter src/auto_aim_debug_shooter.cpp)
 add_executable(mt_auto_aim_debug src/mt_auto_aim_debug.cpp)
 add_executable(auto_buff_debug src/auto_buff_debug.cpp)
 add_executable(auto_buff_debug_mpc src/auto_buff_debug_mpc.cpp)
@@ -55,6 +56,7 @@ target_link_libraries(standard ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim auto_bu
 target_link_libraries(mt_standard ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim auto_buff tools io)
 target_link_libraries(standard_mpc ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim auto_buff tools io)
 target_link_libraries(auto_aim_debug_mpc ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim auto_buff tools io)
+target_link_libraries(auto_aim_debug_shooter ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim auto_buff tools io)
 target_link_libraries(mt_auto_aim_debug ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim auto_buff tools io)
 target_link_libraries(auto_buff_debug ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_buff tools io ${CERES_LIBRARIES})
 target_link_libraries(auto_buff_debug_mpc ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_buff tools io ${CERES_LIBRARIES})
@@ -126,6 +128,9 @@ target_link_libraries(planner_visualization_test ${OpenCV_LIBS} fmt::fmt yaml-cp
 
 add_executable(math_tools_test tests/math_tools_test.cpp)
 target_link_libraries(math_tools_test ${OpenCV_LIBS} fmt::fmt tools)
+
+add_executable(recorder_test tests/recorder_test.cpp)
+target_link_libraries(recorder_test ${OpenCV_LIBS} fmt::fmt tools io)
 
 add_executable(yolo_door_test tests/yolo_door_test.cpp)
 target_link_libraries(yolo_door_test ${OpenCV_LIBS} fmt::fmt yaml-cpp tools io auto_aim)

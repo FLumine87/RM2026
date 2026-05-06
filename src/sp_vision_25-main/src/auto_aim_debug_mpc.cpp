@@ -37,7 +37,7 @@ int main(int argc, char * argv[])
 {
   tools::Exiter exiter;
   tools::Plotter plotter;
-  tools::Recorder recorder(15, true, true);
+  tools::Recorder recorder(15, true);
 
   cv::CommandLineParser cli(argc, argv, keys);
   auto config_path = cli.get<std::string>(0);
@@ -235,12 +235,13 @@ int main(int argc, char * argv[])
       tools::draw_points(img, image_points, {0, 0, 255});
     }
 
-    auto text = fmt::format(
-      "yaw: {:.2f} pitch: {:.2f} plan_fire: {} final: {}\ndist: {:.2f}",
+    auto text1 = fmt::format(
+      "yaw: {:.2f} pitch: {:.2f} plan_fire: {}",
       plan_copy.yaw, plan_copy.pitch,
-      plan_fire_copy, final_fire_copy,
-      aim_xyza.head(3).norm());
-    cv::putText(img, text, {10, 30}, cv::FONT_HERSHEY_SIMPLEX, 1.0, {0, 255, 0}, 2);
+      plan_fire_copy);
+    auto text2 = fmt::format("dist: {:.2f}", aim_xyza.head(3).norm());
+    cv::putText(img, text1, {10, 30}, cv::FONT_HERSHEY_SIMPLEX, 1.0, {0, 255, 0}, 2);
+    cv::putText(img, text2, {10, 60}, cv::FONT_HERSHEY_SIMPLEX, 1.0, {0, 255, 0}, 2);
 
     cv::resize(img, img, {}, 0.5, 0.5);  // 显示时缩小图片尺寸
     cv::imshow("reprojection", img);

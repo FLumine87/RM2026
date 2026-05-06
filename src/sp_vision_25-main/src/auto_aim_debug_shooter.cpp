@@ -216,6 +216,7 @@ int main(int argc, char * argv[])
       final_fire_copy = latest_final_fire;
     }
 
+    Eigen::Vector4d aim_xyza = Eigen::Vector4d::Zero();
     if (!targets.empty()) {
       auto target = targets.front();
 
@@ -227,7 +228,7 @@ int main(int argc, char * argv[])
         tools::draw_points(img, image_points, {0, 255, 0});
       }
 
-      Eigen::Vector4d aim_xyza = debug_xyza_copy;
+      aim_xyza = debug_xyza_copy;
       auto image_points =
         solver.reproject_armor(aim_xyza.head(3), aim_xyza[3], target.armor_type, target.name);
       tools::draw_points(img, image_points, {0, 0, 255});

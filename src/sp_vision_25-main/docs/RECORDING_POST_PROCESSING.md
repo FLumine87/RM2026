@@ -74,6 +74,7 @@ records/
 
 ```batch
 @echo off
+chcp 65001 >nul
 setlocal enabledelayedexpansion
 
 :: 创建输出目录
@@ -115,6 +116,7 @@ file '2024-01-15_10-06-00.avi'
 
 ```batch
 @echo off
+chcp 65001 >nul
 dir /b /od *.avi > temp.txt
 for /f %%f in (temp.txt) do (
     echo file '%%f' >> file_list.txt
@@ -211,11 +213,11 @@ for %%f in (*.avi) do (
 ### 7.1 修复损坏的AVI文件
 
 ```bash
-# 使用FFmpeg修复损坏的视频
+# 使用FFmpeg修复损坏的视频（无损复制，保持原格式）
 ffmpeg -i broken.avi -c:v copy -c:a copy -fflags +genpts fixed.avi
 
-# 重新编码修复
-ffmpeg -i broken.avi -c:v libx264 -crf 23 fixed.mp4
+# 重新编码修复（保持AVI格式，MJPEG编码）
+ffmpeg -i broken.avi -c:v mjpeg -q:v 2 -c:a pcm_s16le fixed.avi
 ```
 
 ### 7.2 跳过损坏帧
@@ -266,6 +268,7 @@ for %%f in (*.avi) do (
 
 ```batch
 @echo off
+chcp 65001 >nul
 :: 先解压所有压缩文件
 7z x *.7z -o"all_files" -y
 
@@ -308,6 +311,7 @@ echo 处理完成！
 
 ```batch
 @echo off
+chcp 65001 >nul
 setlocal enabledelayedexpansion
 
 echo ==============================================
@@ -343,6 +347,7 @@ pause
 
 ```batch
 @echo off
+chcp 65001 >nul
 setlocal enabledelayedexpansion
 
 :: 配置参数
@@ -398,6 +403,7 @@ pause
 
 ```batch
 @echo off
+chcp 65001 >nul
 setlocal enabledelayedexpansion
 
 :: 配置参数
@@ -435,29 +441,35 @@ pause
 @echo off
 setlocal enabledelayedexpansion
 
+:: 使用chcp 65001后再改回936，确保file_list.txt使用ANSI编码
+chcp 65001 >nul
+
 echo ==============================================
 echo          文件列表生成器
 echo ==============================================
 
-:: 生成按时间排序的文件列表
-dir /b /od *.avi > temp_list.txt
+:: 删除旧的文件列表
+if exist file_list.txt del file_list.txt
 
-echo 已生成文件列表：
+:: 切换回ANSI编码生成文件列表，避免UTF-8 BOM问题
+:: 使用 /on 按文件名排序（因为文件名已包含时间戳）
+chcp 936 >nul
+(
+    for /f "delims=" %%f in ('dir /b /on *.avi') do (
+        echo file '%%f'
+    )
+) > file_list.txt
+
+:: 切回UTF-8显示中文
+chcp 65001 >nul
+
+echo 已生成文件列表 file_list.txt：
 echo -------------------
-type temp_list.txt
+type file_list.txt
 echo -------------------
 
 echo.
-echo 请根据需要编辑 file_list.txt，格式示例：
-echo file '2024-01-15_10-00-00.avi'
-echo file '2024-01-15_10-02-00.avi'
-
-:: 创建模板文件
-echo file 'your_video.avi' > file_list.txt
-echo file 'another_video.avi' >> file_list.txt
-
-echo.
-echo 已创建 file_list.txt 模板，请手动编辑选择要处理的文件
+echo 生成完成！如果视频文件损坏，请先运行 01_fix_avi.bat 修复
 
 pause
 ```
@@ -467,8 +479,8 @@ pause
 ```
 1. 运行 01_extract.bat → 解压所有文件到 extracted\
 2. 进入 extracted\ 目录
-3. 运行 00_generate_list.bat → 查看可用文件
-4. 编辑 file_list.txt → 选择要拼接的视频
+3. 运行 00_generate_list.bat → 生成文件列表
+4. （可选）运行 01_fix_avi.bat → 如果视频文件损坏则修复
 5. 运行 02_concat_interpolate.bat → 拼接并插帧
 6. 运行 03_convert_to_mp4.bat → 转换为MP4（可选）
 ```
@@ -532,6 +544,7 @@ pause
 
 ```batch
 @echo off
+chcp 65001 >nul
 setlocal enabledelayedexpansion
 
 echo ==============================================
@@ -569,78 +582,370 @@ pause
 @echo off
 setlocal enabledelayedexpansion
 
+:: 使用chcp 65001后再改回936，确保file_list.txt使用ANSI编码
+chcp 65001 >nul
+
 echo ==============================================
 echo          文件列表生成器
 echo ==============================================
 
-:: 生成按时间排序的文件列表
-dir /b /od *.avi > temp_list.txt
+:: 删除旧的文件列表
+if exist file_list.txt del file_list.txt
 
-echo 已生成文件列表：
+:: 切换回ANSI编码生成文件列表，避免UTF-8 BOM问题
+:: 使用 /on 按文件名排序（因为文件名已包含时间戳）
+chcp 936 >nul
+(
+    for /f "delims=" %%f in ('dir /b /on *.avi') do (
+        echo file '%%f'
+    )
+) > file_list.txt
+
+:: 切回UTF-8显示中文
+chcp 65001 >nul
+
+echo 已生成文件列表 file_list.txt：
 echo -------------------
-type temp_list.txt
+type file_list.txt
 echo -------------------
 
 echo.
-echo 请根据需要编辑 file_list.txt，格式示例：
-echo file '2024-01-15_10-00-00.avi'
-echo file '2024-01-15_10-02-00.avi'
-
-:: 创建模板文件
-echo file 'your_video.avi' > file_list.txt
-echo file 'another_video.avi' >> file_list.txt
-
-echo.
-echo 已创建 file_list.txt 模板，请手动编辑选择要处理的文件
+echo 生成完成！如果视频文件损坏，请先运行 01_fix_avi.bat 修复
 
 pause
 ```
 
-### 11.3 脚本3：视频拼接与插帧（`02_concat_interpolate.bat`）
+### 11.3 脚本3：修复损坏的AVI文件（`01_fix_avi.bat`）
 
-用于根据文件列表拼接视频，并进行插帧处理。需要先手动编辑 `file_list.txt` 选择要处理的文件。
+用于修复损坏或不完整的AVI文件，使其能够正常拼接。修复后保持AVI格式。
+
+```batch
+@echo off
+chcp 65001 >nul
+setlocal enabledelayedexpansion
+
+echo ==============================================
+echo          脚本3：修复损坏的AVI文件
+echo ==============================================
+
+:: 创建修复后的文件目录
+mkdir fixed 2>NUL
+
+:: 修复所有AVI文件
+set "count=0"
+for %%f in (*.avi) do (
+    set /a count+=1
+    echo [%%count%] 正在修复: %%f
+    
+    :: 使用FFmpeg重新编码修复，保持AVI格式（MJPEG编码）
+    ffmpeg -i "%%f" -c:v mjpeg -q:v 2 -c:a pcm_s16le "fixed\%%~nf_fixed.avi" -y -hide_banner
+    
+    :: 检查修复是否成功
+    if exist "fixed\%%~nf_fixed.avi" (
+        echo    修复成功！
+    ) else (
+        echo    修复失败！
+    )
+)
+
+echo ==============================================
+echo             修复完成！
+echo 修复文件数：%count%
+echo 输出目录：fixed\
+echo 注：修复后的文件为MJPEG编码的AVI格式，保持与原格式兼容
+echo ==============================================
+
+pause
+```
+
+### 11.4 脚本4：视频拼接与插帧（`02_concat_interpolate.bat`）
+
+用于根据文件列表拼接视频，并进行插帧处理。如果原始视频文件损坏，请先运行 `01_fix_avi.bat` 修复。
+
+**GPU加速版本**（推荐）：
 
 ```batch
 @echo off
 setlocal enabledelayedexpansion
 
-:: 配置参数
-set "FPS=30"
-set "CRF=23"
-set "OUTPUT_NAME=output_interpolated"
+REM ==================== 配置参数（请根据实际情况修改）====================
+set "TARGET_FPS=30"                    REM 目标帧率（你的原视频15fps，翻倍到30）
+set "CRF=18"                           REM 编码质量（越小质量越高，推荐16-20）
+set "OUTPUT_NAME=output_interpolated"  REM 输出文件名（不含扩展名）
+set "GPU_ID=0"                         REM GPU设备ID（0为第一张显卡）
+
+REM RIFE 相关配置
+set "RIFE_PATH=C:\aaa\rife-ncnn-vulkan"    REM 请修改为你的实际路径！
+set "RIFE_MODEL=models/rife-v4.6"      REM 模型选择（rife-v4.6质量最高）
+set "ENABLE_TTA_SPATIAL=1"             REM 启用空间TTA（质量提升明显，1=启用 0=关闭）
+set "ENABLE_TTA_TEMPORAL=1"            REM 启用时间TTA（减少闪烁，1=启用 0=关闭）
+
+REM FFmpeg 配置
+set "FFMPEG_PATH=ffmpeg"               REM 如果ffmpeg不在PATH中，填写完整路径，如 C:\ffmpeg\bin\ffmpeg.exe
+set "USE_NVENC=1"                      REM 使用NVENC硬件编码（1=启用 0=软件编码）
+REM ================================================================
+
+REM 设置UTF-8编码显示中文
+chcp 65001 >nul
 
 echo ==============================================
-echo          脚本3：视频拼接与插帧
+echo      RIFE 视频拼接与插帧脚本 (GPU加速版)
 echo ==============================================
+echo.
+echo 配置信息：
+echo   目标帧率：%TARGET_FPS% fps
+echo   编码质量：CRF %CRF%
+echo   RIFE路径：%RIFE_PATH%
+echo   空间TTA：%ENABLE_TTA_SPATIAL% (1=启用, 可提升画质但速度变慢)
+echo   时间TTA：%ENABLE_TTA_TEMPORAL% (1=启用, 可减少闪烁但速度变慢)
+echo.
 
-:: 检查文件列表是否存在
+REM 检查文件列表是否存在
 if not exist file_list.txt (
-    echo 错误：未找到 file_list.txt 文件！
+    echo [错误] 未找到 file_list.txt 文件！
+    echo.
     echo 请先创建 file_list.txt，格式如下：
-    echo file 'video1.avi'
-    echo file 'video2.avi'
+    echo   file 'video1.avi'
+    echo   file 'video2.avi'
+    echo   file 'video3.mp4'
+    echo.
+    echo 注意：所有视频的分辨率、帧率、编码格式应一致
     pause
     exit /b
 )
 
-:: 1. 拼接视频
-echo [1/2] 正在拼接视频...
-ffmpeg -f concat -safe 0 -i file_list.txt -c copy temp_concat.avi
+REM 检查 RIFE 是否存在
+if not exist "%RIFE_PATH%\rife-ncnn-vulkan.exe" (
+    echo [错误] 未找到 RIFE 程序！
+    echo 请检查 RIFE_PATH 是否正确：%RIFE_PATH%
+    echo.
+    echo 提示：请从以下地址下载并解压到指定目录
+    echo   https://github.com/nihui/rife-ncnn-vulkan/releases
+    pause
+    exit /b
+)
 
-:: 2. 插帧处理
-echo [2/2] 正在插帧到 %FPS% fps...
-ffmpeg -i temp_concat.avi -r %FPS% -filter:v "minterpolate='fps=%FPS%'" -c:v libx264 -crf %CRF% "%OUTPUT_NAME%.avi"
+REM 检查 FFmpeg
+where %FFMPEG_PATH% >nul 2>nul
+if %errorlevel% neq 0 (
+    echo [错误] 未找到 FFmpeg！
+    echo 请安装 FFmpeg 或设置正确的 FFMPEG_PATH
+    pause
+    exit /b
+)
 
-:: 清理临时文件
-del temp_concat.avi
+REM ==================== 步骤1：拼接视频 ====================
+echo [1/4] 正在拼接视频...
+%FFMPEG_PATH% -f concat -safe 0 -i file_list.txt -c copy temp_concat.mkv
 
+if %errorlevel% neq 0 (
+    echo [错误] 视频拼接失败！
+    pause
+    exit /b
+)
+echo [完成] 视频拼接成功
+echo.
+
+REM ==================== 步骤2：拆分为图片帧 ====================
+echo [2/4] 正在将视频拆分为图片帧...
+set "INPUT_DIR=input_frames"
+set "OUTPUT_DIR=output_frames"
+
+if exist "%INPUT_DIR%" rmdir /s /q "%INPUT_DIR%"
+if exist "%OUTPUT_DIR%" rmdir /s /q "%OUTPUT_DIR%"
+mkdir "%INPUT_DIR%"
+mkdir "%OUTPUT_DIR%"
+
+REM 拆帧（PNG格式，保证质量）
+%FFMPEG_PATH% -i temp_concat.mkv -qscale:v 1 "%INPUT_DIR%\frame_%%08d.png"
+
+if %errorlevel% neq 0 (
+    echo [错误] 视频拆帧失败！
+    pause
+    exit /b
+)
+
+REM 计算帧数
+set "frame_count=0"
+for /f %%a in ('dir /b "%INPUT_DIR%\*.png" 2^>nul ^| find /c /v ""') do set "frame_count=%%a"
+echo [完成] 成功拆分 %frame_count% 帧
+echo.
+
+REM ==================== 步骤3：RIFE 插帧处理 ====================
+echo [3/4] 正在使用 RIFE 进行 AI 插帧（这可能需要较长时间）...
+echo   输入帧数：%frame_count%
+echo   目标倍数：2倍（%TARGET_FPS% fps）
+echo.
+
+cd /d "%RIFE_PATH%"
+
+REM 构建 RIFE 参数
+set "RIFE_ARGS=-i "%CD%\%INPUT_DIR%" -o "%CD%\%OUTPUT_DIR%" -m %RIFE_MODEL% -n 2 -g %GPU_ID% -j 2:4:2"
+
+if "%ENABLE_TTA_SPATIAL%"=="1" set "RIFE_ARGS=%RIFE_ARGS% -x"
+if "%ENABLE_TTA_TEMPORAL%"=="1" set "RIFE_ARGS=%RIFE_ARGS% -z"
+
+echo 执行命令：rife-ncnn-vulkan.exe %RIFE_ARGS%
+echo.
+
+rife-ncnn-vulkan.exe %RIFE_ARGS%
+
+if %errorlevel% neq 0 (
+    echo [错误] RIFE 插帧失败！
+    cd /d "%~dp0"
+    pause
+    exit /b
+)
+
+cd /d "%~dp0"
+
+REM 计算输出帧数
+set "output_frame_count=0"
+for /f %%a in ('dir /b "%OUTPUT_DIR%\*.png" 2^>nul ^| find /c /v ""') do set "output_frame_count=%%a"
+echo [完成] RIFE 处理完成，输出 %output_frame_count% 帧
+echo.
+
+REM ==================== 步骤4：合并为视频 ====================
+echo [4/4] 正在将图片帧合并为视频...
+
+REM 构建编码参数
+set "ENCODE_ARGS=-framerate %TARGET_FPS% -i "%OUTPUT_DIR%\frame_%%08d.png" -c:v"
+
+if "%USE_NVENC%"=="1" (
+    REM NVIDIA NVENC 硬件编码
+    set "ENCODE_ARGS=%ENCODE_ARGS% h264_nvenc -rc vbr -cq %CRF% -b:v 0 -preset p7 -tune hq"
+    echo 使用 NVENC 硬件编码（高质量模式）
+) else (
+    REM 软件编码（质量稍高但速度慢）
+    set "ENCODE_ARGS=%ENCODE_ARGS% libx264 -crf %CRF% -preset slow"
+    echo 使用 libx264 软件编码（高质量模式）
+)
+
+REM 添加音频（从原视频复制）
+%FFMPEG_PATH% %ENCODE_ARGS% -pix_fmt yuv420p -movflags +faststart -i temp_concat.mkv -map 0:v -map 1:a? -c:a copy "%OUTPUT_NAME%.mp4"
+
+if %errorlevel% neq 0 (
+    echo [错误] 视频合并失败！
+    pause
+    exit /b
+)
+echo [完成] 视频合并成功
+echo.
+
+REM ==================== 清理临时文件 ====================
+echo 正在清理临时文件...
+if exist temp_concat.mkv del temp_concat.mkv
+if exist "%INPUT_DIR%" rmdir /s /q "%INPUT_DIR%"
+if exist "%OUTPUT_DIR%" rmdir /s /q "%OUTPUT_DIR%"
+
+echo.
 echo ==============================================
-echo             处理完成！
-echo 输出文件：%OUTPUT_NAME%.avi
+echo              处理完成！
 echo ==============================================
+echo   输入帧率：%~2%（自动检测）
+echo   输出帧率：%TARGET_FPS% fps
+echo   输出文件：%OUTPUT_NAME%.mp4
+echo   编码质量：CRF %CRF%
+echo   RIFE配置：TTA空间=%ENABLE_TTA_SPATIAL%  TTA时间=%ENABLE_TTA_TEMPORAL%
+echo ==============================================
+echo.
+echo 提示：
+echo   1. 如果对质量不满意，可以降低 CRF 值（如 16）
+echo   2. 如果处理速度太慢，可以关闭 TTA（设置 ENABLE_TTA_SPATIAL=0）
+echo   3. 输出文件已添加音频轨道（如果有）
+echo.
 
 pause
 ```
+
+#### 脚本参数说明
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `FPS` | 30 | 目标帧率 |
+| `CRF` | 23 | 视频质量（0-51，越小质量越高） |
+| `OUTPUT_NAME` | output_interpolated | 输出文件名 |
+| `USE_GPU` | 1 | 是否使用GPU加速（需安装支持CUDA的FFmpeg） |
+| `USE_DAIN` | 0 | 是否使用DAIN-APP高质量插帧（需单独安装） |
+
+#### 使用建议
+
+1. **默认模式（推荐）**：`USE_GPU=1`, `USE_DAIN=0` - 使用NVIDIA GPU加速，性能提升5-10倍
+2. **高质量模式**：`USE_GPU=0`, `USE_DAIN=1` - 使用DAIN-APP，插帧质量更高但速度较慢
+3. **兼容性模式**：`USE_GPU=0`, `USE_DAIN=0` - 纯CPU处理，兼容性最好但最慢
+
+---
+
+#### 如何安装支持CUDA的FFmpeg
+
+**方法1：使用NVIDIA官方构建（推荐）**
+
+1. 访问 [NVIDIA Video Codec SDK](https://developer.nvidia.com/video-codec-sdk) 下载页面
+2. 下载包含FFmpeg的完整工具包，或直接从以下地址下载预编译版本：
+   - GitHub: [NVIDIA/ffmpeg](https://github.com/NVIDIA/FFmpeg)
+   - 第三方镜像: [gyan.dev/ffmpeg/builds](https://www.gyan.dev/ffmpeg/builds/)
+
+**方法2：使用Chocolatey（Windows）**
+
+```powershell
+choco install ffmpeg-full --version=6.0
+```
+
+**方法3：手动编译（高级用户）**
+
+```bash
+# 安装依赖
+git clone https://git.videolan.org/git/ffmpeg/nv-codec-headers.git
+cd nv-codec-headers && make install && cd ..
+
+# 编译FFmpeg
+git clone https://github.com/FFmpeg/FFmpeg.git
+cd FFmpeg
+./configure --enable-nvenc --enable-cuda --enable-cuvid --enable-nvdec
+make -j$(nproc)
+make install
+```
+
+---
+
+#### 验证GPU加速是否生效
+
+运行以下命令检查FFmpeg是否支持CUDA：
+
+```bash
+ffmpeg -encoders | findstr nvenc
+```
+
+正常输出应包含：
+```
+ V..... h264_nvenc           NVIDIA NVENC H.264 encoder (codec h264)
+ V..... hevc_nvenc           NVIDIA NVENC HEVC encoder (codec hevc)
+```
+
+运行以下命令检查是否支持硬件解码：
+
+```bash
+ffmpeg -hwaccels
+```
+
+正常输出应包含：
+```
+cuda
+```
+
+运行脚本时，如果看到类似以下输出说明GPU加速成功：
+
+```
+Stream mapping:
+  Stream #0:0 -> #0:0 (rawvideo (native) -> h264 (h264_nvenc))
+Press [q] to stop, [?] for help
+frame=   50 fps= 30 q=23.0 size=    1024kB time=00:00:01.66 bitrate=5053.5kbits/s speed=10.0x
+```
+
+> **注意**：使用GPU加速需要满足以下条件：
+> - NVIDIA显卡（Kepler架构及以上，建议GTX 10系列及更高）
+> - 安装最新的NVIDIA驱动
+> - 安装支持CUDA的FFmpeg版本
 
 ### 11.4 脚本4：AVI转MP4（`03_convert_to_mp4.bat`）
 
@@ -648,30 +953,35 @@ pause
 
 ```batch
 @echo off
+chcp 65001 >nul
 setlocal enabledelayedexpansion
 
 :: 配置参数
 set "CRF=23"
+set "INPUT_FILE=output_interpolated.avi"
 
 echo ==============================================
-echo          脚本4：AVI转MP4批量转换
+echo          脚本4：AVI转MP4（仅转换拼接视频）
 echo ==============================================
+
+:: 检查输入文件是否存在
+if not exist "%INPUT_FILE%" (
+    echo 错误：未找到 %INPUT_FILE% 文件！
+    echo 请先运行 02_concat_interpolate.bat 进行视频拼接和插帧
+    pause
+    exit /b
+)
 
 :: 创建输出目录
 mkdir mp4_output 2>NUL
 
-:: 批量转换所有AVI文件
-set "count=0"
-for %%f in (*.avi) do (
-    set /a count+=1
-    echo [%%count%] 正在转换: %%f
-    ffmpeg -i "%%f" -c:v libx264 -crf %CRF% -c:a aac "mp4_output\%%~nf.mp4" -y
-)
+:: 转换拼接好的视频
+echo 正在转换: %INPUT_FILE%
+ffmpeg -i "%INPUT_FILE%" -c:v libx264 -crf %CRF% -c:a aac "mp4_output\%INPUT_FILE:.avi=.mp4%" -y
 
 echo ==============================================
 echo             转换完成！
-echo 转换文件数：%count%
-echo 输出目录：mp4_output\
+echo 输出文件：mp4_output\%INPUT_FILE:.avi=.mp4%
 echo ==============================================
 
 pause
@@ -682,8 +992,8 @@ pause
 ```
 1. 运行 01_extract.bat → 解压所有文件到 extracted\
 2. 进入 extracted\ 目录
-3. 运行 00_generate_list.bat → 查看可用文件
-4. 编辑 file_list.txt → 选择要拼接的视频
+3. 运行 00_generate_list.bat → 生成文件列表
+4. （可选）运行 01_fix_avi.bat → 如果视频文件损坏则修复
 5. 运行 02_concat_interpolate.bat → 拼接并插帧
 6. 运行 03_convert_to_mp4.bat → 转换为MP4（可选）
 ```
