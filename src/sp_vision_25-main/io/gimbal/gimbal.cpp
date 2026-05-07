@@ -101,7 +101,8 @@ void Gimbal::send(io::VisionToGimbal VisionToGimbal)
   tx_data_.vx = VisionToGimbal.vx;
   tx_data_.vy = VisionToGimbal.vy;
   tx_data_.posture = VisionToGimbal.posture;
-  tx_data_.rotation_posture = VisionToGimbal.rotation_posture;
+  tx_data_.spin_flag = VisionToGimbal.spin_flag;
+  tx_data_.scan = VisionToGimbal.scan;
   tx_data_.reverse = VisionToGimbal.reverse;
   tx_data_.crc16 = tools::get_crc16(
     reinterpret_cast<uint8_t *>(&tx_data_), sizeof(tx_data_) - sizeof(tx_data_.crc16));
@@ -185,18 +186,22 @@ void Gimbal::read_thread()
           state_.pitch_vel = rx_data_.pitch_vel;
           state_.bullet_speed = rx_data_.bullet_speed;
           state_.bullet_count = rx_data_.bullet_count;
-          state_.timestamp = 0;
-          state_.hp = 0;
-          state_.time = rx_data_.time_;
           state_.is_play = rx_data_.is_play;
-          state_.enemy_score = rx_data_.enemy_score;
-          state_.own_score = rx_data_.own_score;
-          for (int i = 0; i < 3; ++i) {
-            state_.own_hp[i] = rx_data_.own_hp_[i];
-          }
-          state_.occupy = rx_data_.occupy;
-          state_.mode = rx_data_.mode;
+          state_.time_ = rx_data_.time_;
+          state_.q[0] = rx_data_.q[0];
+          state_.q[1] = rx_data_.q[1];
+          state_.q[2] = rx_data_.q[2];
+          state_.q[3] = rx_data_.q[3];
+          state_.positon_x = rx_data_.positon_x;
+          state_.positon_y = rx_data_.positon_y;
+          state_.tar_positon_x = rx_data_.tar_positon_x;
+          state_.tar_positon_y = rx_data_.tar_positon_y;
+          state_.own_hp_ = rx_data_.own_hp_;
+          state_.outpost_HP = rx_data_.outpost_HP;
+          state_.outpost_status = rx_data_.outpost_status;
+          state_.fort_status = rx_data_.fort_status;
           state_.reverse = rx_data_.reverse;
+          state_.mode = rx_data_.mode;
 
           switch (rx_data_.mode) {
             case 0:

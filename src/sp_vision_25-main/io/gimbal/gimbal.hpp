@@ -19,30 +19,34 @@ namespace io
 struct __attribute__((packed)) GimbalToVision
 {
   uint8_t head[2] = {'S', 'P'};
-  uint8_t mode;  // 0: 空闲, 1: 自瞄, 2: 小符, 3: 大符
-  float q[4];    // wxyz顺序
+  uint8_t mode;          // 0: 空闲, 1: 自瞄, 2: 小符, 3: 大符
+  float q[4];            // wxyz顺序
   float yaw;
   float yaw_vel;
   float pitch;
   float pitch_vel;
   float bullet_speed;
-  uint16_t bullet_count;  // 子弹累计发送次数
+  uint16_t bullet_count; // 子弹累计发送次数
   uint8_t is_play;
   uint16_t time_;        // 比赛时间
-  uint16_t enemy_score;   // 对方胜利点
-  uint16_t own_score;     // 己方分数
-  uint16_t own_hp_[3];       // 己方血量 0 哨兵 1 英雄 2 步兵
-  uint8_t occupy;
+  float positon_x;       // 机器人自身位置
+  float positon_y;
+  float tar_positon_x;   // 目标地点位置（半自动模式使用）
+  float tar_positon_y;
+  uint16_t own_hp_;      // 己方血量
+  uint16_t outpost_HP;   // 己方前哨站血量
+  uint8_t outpost_status; // 前哨站占领状态
+  uint8_t fort_status;    // 堡垒占领状态
   uint8_t reverse;
   uint16_t crc16;        // 校验值
 };
 
-static_assert(sizeof(GimbalToVision) <= 64);
+static_assert(sizeof(GimbalToVision) <= 128);
 
 struct __attribute__((packed)) VisionToGimbal
 {
   uint8_t head[2] = {'S', 'P'};
-  uint8_t mode;  // 0: 不控制, 1: 控制云台但不开火，2: 控制云台且开火
+  uint8_t mode;          // 0: 不控制, 1: 控制云台但不开火，2: 控制云台且开火
   float yaw;
   float yaw_vel;
   float yaw_acc;
@@ -52,7 +56,8 @@ struct __attribute__((packed)) VisionToGimbal
   float vx;              // X速度
   float vy;              // Y速度
   uint8_t posture;       // 姿态指令
-  uint8_t rotation_posture; // 转向姿态
+  uint8_t spin_flag;     // 旋转指令
+  uint8_t scan;          // 扫描指令
   uint8_t reverse;        // 预留位
   uint16_t crc16;        // 校验值
 };
@@ -75,17 +80,19 @@ struct GimbalState
   float pitch_vel;
   float bullet_speed;
   uint16_t bullet_count;
-  // 导航相关数据
-  uint16_t timestamp;
-  uint16_t hp;
-  uint16_t time;
   uint8_t is_play;
-  uint16_t enemy_score;
-  uint16_t own_score;
-  uint16_t own_hp[3];
-  uint8_t occupy;
-  uint8_t mode;
+  uint16_t time_;
+  float q[4];
+  float positon_x;
+  float positon_y;
+  float tar_positon_x;
+  float tar_positon_y;
+  uint16_t own_hp_;
+  uint16_t outpost_HP;
+  uint8_t outpost_status;
+  uint8_t fort_status;
   uint8_t reverse;
+  uint8_t mode;
 };
 
 class Gimbal

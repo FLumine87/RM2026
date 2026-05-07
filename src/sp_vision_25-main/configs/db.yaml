@@ -33,19 +33,19 @@ max_rectangular_error: 25 # degree
 min_confidence: 0.8
 
 #####-----tracker参数-----#####
-min_detect_count: 5
+min_detect_count: 3
 max_temp_lost_count: 15
 outpost_max_temp_lost_count: 75
 
 #####-----aimer参数-----#####
-yaw_offset: 0.5 # degree -2.5
-pitch_offset: -1.3 # degree 2
+yaw_offset: 0.0 # degree -2.5
+pitch_offset: 0.0 # degree 2
 comming_angle: 60 # degree
 leaving_angle: 20 # degree
 decision_speed: 8 # rad/s
-high_speed_delay_time: 0.025 # s
-low_speed_delay_time: 0.015 # s
-fire_delay: 0.01 # s
+high_speed_delay_time: 0.055 # s
+low_speed_delay_time: 0.055 # s
+fire_delay: 0.075 # s
 
 #####-----shooter参数-----#####
 first_tolerance: 3 # 近距离射击容差，degree
@@ -55,7 +55,7 @@ auto_fire: true # 是否由自瞄控制射击
 max_fire_yaw_angle: 5 # 允许开火的装甲板偏航角阈值，degree
 
 camera_name: "hikrobot"
-exposure_ms: 1
+exposure_ms: 3
 gain: 16.8
 vid_pid: "2bdf:0001"
 
@@ -74,12 +74,17 @@ R_gimbal2imubody: [0, 1, 0, -1, 0, 0, 0, 0, 1]
 # distort_coeffs: [-0.06094747804015388, 0.095382434159573606, -0.00050961560953343983, 0.000122850992892626, 0]
 
 # 重投影误差: 0.0479px duobo 12mm
-camera_matrix: [3640.0307247132732, 0, 733.50105164161846, 0, 3636.5137088762144, 616.999577651545, 0, 0, 1]
-distort_coeffs: [-0.14820436180762939, -0.19281101979957613, 0.00092208707422357622, 0.0018606322883594991, 0]
+#camera_matrix: [3640.0307247132732, 0, 733.50105164161846, 0, 3636.5137088762144, 616.999577651545, 0, 0, 1]
+#distort_coeffs: [-0.14820436180762939, -0.19281101979957613, 0.00092208707422357622, 0.0018606322883594991, 0]
 
 # 相机同理想情况的偏角: yaw-1.61 pitch-0.82 roll-0.61 degree
 # R_camera2gimbal: [0.02823004230930648, -0.014076983590428133, 0.99950232778328707, -0.99954530259354468, -0.010995644138609872, 0.028076393521179785, 0.010594940981141165, -0.99984045444409364, -0.014380990321749998]
 # t_camera2gimbal: [0.045517325957791413, 0.10544338092767802, 0.034649710880185793]
+
+# 重投影误差: 0.0309px duobu 8mm
+camera_matrix: [2357.6732936386447, 0, 719.78078890387235, 0, 2355.4806248339464, 515.62239356743021, 0, 0, 1]
+distort_coeffs: [-0.1043911821707289, 0.13311603567376773, -0.00042585955568750426, 0.00063516957164237806, 0]
+
 
 # 相机同理想情况的偏角: yaw-1.61 pitch-0.82 roll-0.61 degree
 R_camera2gimbal: [0, 0, 1, -0.999744, -0.022689, 0, 0.022689, -0.999744, 0]
@@ -97,7 +102,7 @@ com_port: "/dev/gimbal"
 #####-----planner-----#####
 fire_thresh: 0.02
 convergence_thresh: 0.1
-mid_ratio: 0.9
+mid_ratio: 0.5
 
 # 显式方案参数
 transition_ratio: 0.3  # 过渡段时间调整 (0.0=最小过渡满足动力学约束, 1.0=最大过渡无跟随段)

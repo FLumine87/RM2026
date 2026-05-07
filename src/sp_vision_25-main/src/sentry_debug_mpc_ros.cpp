@@ -20,6 +20,7 @@
 #include "std_msgs/msg/header.hpp"
 #include "std_msgs/msg/string.hpp"
 #include "std_msgs/msg/u_int8.hpp"
+#include "std_msgs/msg/float64.hpp"
 #include "tasks/auto_aim/planner/planner.hpp"
 #include "tasks/auto_aim/solver.hpp"
 #include "tasks/auto_aim/tracker.hpp"
@@ -44,6 +45,7 @@
 #include <auto_aim_interfaces/msg/gimbal_feedback.hpp>
 #include <auto_aim_interfaces/msg/sentry_status.hpp>
 #include <auto_aim_interfaces/msg/from_decision.hpp>
+#include <auto_aim_interfaces/msg/gimbal_command.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
 #else
 #include "auto_aim_interfaces/msg/armor.hpp"
@@ -54,6 +56,7 @@
 #include "auto_aim_interfaces/msg/gimbal_feedback.hpp"
 #include "auto_aim_interfaces/msg/sentry_status.hpp"
 #include "auto_aim_interfaces/msg/from_decision.hpp"
+#include "auto_aim_interfaces/msg/gimbal_command.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
 #endif
 
@@ -81,6 +84,10 @@ public:
         "/cmd_vel", 10, std::bind(&ROS2Publisher::cmd_vel_callback, this, std::placeholders::_1)))
   , posture_sub_(this->create_subscription<auto_aim_interfaces::msg::FromDecision>(
         "/posture_number", 10, std::bind(&ROS2Publisher::posture_callback, this, std::placeholders::_1)))
+  , gimbal_command_sub_(this->create_subscription<auto_aim_interfaces::msg::GimbalCommand>(
+        "/gimbal_command", 10, std::bind(&ROS2Publisher::gimbal_command_callback, this, std::placeholders::_1)))
+  , speed_multiplier_sub_(this->create_subscription<std_msgs::msg::Float64>(
+        "/speed_multiplier", 10, std::bind(&ROS2Publisher::speed_multiplier_callback, this, std::placeholders::_1)))
   {
 
     auto yaml = YAML::LoadFile(config_path);
@@ -379,13 +386,10 @@ public:
   {
     auto sentry_status_msg = std::make_shared<auto_aim_interfaces::msg::SentryStatus>();
     sentry_status_msg->is_play = state.is_play;
-    sentry_status_msg->time = state.time;
-    sentry_status_msg->enemy_score = state.enemy_score;
-    sentry_status_msg->own_score = state.own_score;
-    for (int i = 0; i < 3; ++i) {
-      sentry_status_msg->own_hp[i] = state.own_hp[i];
-    }
-    sentry_status_msg->occupy = state.occupy;
+    sentry_status_msg->time = state.time_;
+    sentry_status_msg->own_hp = state.own_hp_;
+    sentry_status_msg->allowance = state.bullet_count;
+    sentry_status_msg->outpost_hp = state.outpost_HP;
     sentry_status_msg->mode = state.mode;
     sentry_status_msg->reverse = state.reverse;
     
@@ -406,7 +410,27 @@ public:
   {
     std::lock_guard<std::mutex> lock(nav_mutex_);
     nav_posture_ = msg->posture;
-    nav_rotation_posture_ = msg->rotation_posture;
+    nav_spin_flag_ = msg->spin_flag;
+    nav_scan_ = msg->scan;
+  }
+
+  void gimbal_command_callback(const auto_aim_interfaces::msg::GimbalCommand::SharedPtr msg)
+  {
+    std::lock_guard<std::mutex> lock(nav_mutex_);
+    nav_gimbal_yaw_ = msg->yaw;
+    nav_gimbal_pitch_ = msg->pitch;
+    nav_reverse_ = msg->reverse;
+    has_gimbal_command_ = true;
+    last_gimbal_command_time_ = this->now();
+  }
+
+  void speed_multiplier_callback(const std_msgs::msg::Float64::SharedPtr msg)
+  {
+    std::lock_guard<std::mutex> lock(nav_mutex_);
+    double new_multiplier = msg->data;
+    if (new_multiplier < 0.0) new_multiplier = 0.0;
+    if (new_multiplier > 1.0) new_multiplier = 1.0;
+    speed_multiplier_ = new_multiplier;
   }
 
   float get_nav_vx() const
@@ -427,10 +451,52 @@ public:
     return nav_posture_;
   }
 
-  uint8_t get_nav_rotation_posture() const
+  uint8_t get_nav_spin_flag() const
   {
     std::lock_guard<std::mutex> lock(nav_mutex_);
-    return nav_rotation_posture_;
+    return nav_spin_flag_;
+  }
+
+  uint8_t get_nav_scan() const
+  {
+    std::lock_guard<std::mutex> lock(nav_mutex_);
+    return nav_scan_;
+  }
+
+  float get_nav_gimbal_yaw() const
+  {
+    std::lock_guard<std::mutex> lock(nav_mutex_);
+    return nav_gimbal_yaw_;
+  }
+
+  float get_nav_gimbal_pitch() const
+  {
+    std::lock_guard<std::mutex> lock(nav_mutex_);
+    return nav_gimbal_pitch_;
+  }
+
+  uint8_t get_nav_reverse() const
+  {
+    std::lock_guard<std::mutex> lock(nav_mutex_);
+    return nav_reverse_;
+  }
+
+  bool get_has_gimbal_command() const
+  {
+    std::lock_guard<std::mutex> lock(nav_mutex_);
+    return has_gimbal_command_;
+  }
+
+  rclcpp::Time get_last_gimbal_command_time() const
+  {
+    std::lock_guard<std::mutex> lock(nav_mutex_);
+    return last_gimbal_command_time_;
+  }
+
+  double get_speed_multiplier() const
+  {
+    std::lock_guard<std::mutex> lock(nav_mutex_);
+    return speed_multiplier_;
   }
 
   void publish_marker(
@@ -527,13 +593,22 @@ public:
   rclcpp::Publisher<auto_aim_interfaces::msg::TargetSentry>::SharedPtr target_sentry_pub_;
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub_;
   rclcpp::Subscription<auto_aim_interfaces::msg::FromDecision>::SharedPtr posture_sub_;
+  rclcpp::Subscription<auto_aim_interfaces::msg::GimbalCommand>::SharedPtr gimbal_command_sub_;
+  rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr speed_multiplier_sub_;
   
   // 导航相关变量
   mutable std::mutex nav_mutex_;
   float nav_vx_ = 0.0f;
   float nav_vy_ = 0.0f;
   uint8_t nav_posture_ = 0;
-  uint8_t nav_rotation_posture_ = 0;
+  uint8_t nav_spin_flag_ = 0;
+  uint8_t nav_scan_ = 0;
+  float nav_gimbal_yaw_ = 0.0f;
+  float nav_gimbal_pitch_ = 0.0f;
+  uint8_t nav_reverse_ = 0;
+  bool has_gimbal_command_ = false;
+  rclcpp::Time last_gimbal_command_time_;
+  double speed_multiplier_ = 0.8;
 
   visualization_msgs::msg::Marker position_marker_;
   visualization_msgs::msg::Marker linear_v_marker_;
@@ -601,24 +676,42 @@ int main(int argc, char * argv[])
       }
 
       // 获取导航数据
-      float vx = ros2_publisher->get_nav_vx();
-      float vy = ros2_publisher->get_nav_vy();
+      double current_multiplier = ros2_publisher->get_speed_multiplier();
+      float vx = ros2_publisher->get_nav_vx() * current_multiplier;
+      float vy = -ros2_publisher->get_nav_vy() * current_multiplier;
       uint8_t posture = ros2_publisher->get_nav_posture();
-      uint8_t rotation_posture = ros2_publisher->get_nav_rotation_posture();
+      uint8_t spin_flag = ros2_publisher->get_nav_spin_flag();
+      uint8_t scan = ros2_publisher->get_nav_scan();
+      uint8_t reverse = ros2_publisher->get_nav_reverse();
+
+      // 检查是否收到云台指令，以及指令是否在超时时间内（500ms）
+      bool use_gimbal_command = false;
+      float yaw_command = plan.yaw;
+      float pitch_command = plan.pitch;
+      if (ros2_publisher->get_has_gimbal_command()) {
+        auto now = ros2_publisher->get_clock()->now();
+        auto elapsed = now - ros2_publisher->get_last_gimbal_command_time();
+        if (elapsed.seconds() < 0.5) {
+          use_gimbal_command = true;
+          yaw_command = ros2_publisher->get_nav_gimbal_yaw();
+          pitch_command = ros2_publisher->get_nav_gimbal_pitch();
+        }
+      }
 
       io::VisionToGimbal msg;
       msg.mode = plan.control ? (plan.fire ? 2 : 1) : 0;
-      msg.yaw = plan.yaw;
+      msg.yaw = yaw_command;
       msg.yaw_vel = plan.yaw_vel;
       msg.yaw_acc = plan.yaw_acc;
-      msg.pitch = plan.pitch;
+      msg.pitch = pitch_command;
       msg.pitch_vel = plan.pitch_vel;
       msg.pitch_acc = plan.pitch_acc;
       msg.vx = vx;
       msg.vy = vy;
       msg.posture = posture;
-      msg.rotation_posture = rotation_posture;
-      msg.reverse = 0;
+      msg.spin_flag = spin_flag;
+      msg.scan = scan;
+      msg.reverse = reverse;
 
       gimbal.send(msg);
 

@@ -34,6 +34,7 @@ if(ament_cmake_FOUND AND rosidl_default_generators_FOUND AND std_msgs_FOUND AND 
       "msg/GimbalFeedback.msg"
       "msg/SentryStatus.msg"
       "msg/FromDecision.msg"
+      "msg/GimbalCommand.msg"
       DEPENDENCIES std_msgs geometry_msgs
     )
     

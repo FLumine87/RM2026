@@ -53,6 +53,8 @@ state_.xxx = rx_data_.xxx;
 
 ## 二、添加/删除「视觉 → 下位机」的数据
 
+> **重要规范**：**禁止**使用单独参数处理方法（如 `GetGimbalPackage()`, `GetFireMode()`, `SetGimbalPackage()`），也**禁止**添加多参数的 `send` 重载。所有数据必须由主程序统一组包后，调用单一的 `send(VisionToGimbal)` 方法发送。
+
 ### 2.1 修改 `VisionToGimbal` 结构体
 **文件**: `io/gimbal/gimbal.hpp`
 
@@ -65,30 +67,75 @@ struct __attribute__((packed)) VisionToGimbal
 static_assert(sizeof(VisionToGimbal) <= 64);  // 确保不超限
 ```
 
-### 2.2 更新 `send` 方法
-**文件**: `io/gimbal/gimbal.cpp`
+### 2.2 更新 `send` 方法（唯一入口）
+**文件**: `io/gimbal/gimbal.hpp`
+
+`Gimbal` 类**只保留**以下单一 `send` 方法：
 
 ```cpp
-void Gimbal::send(io::VisionToGimbal VisionToGimbal)
-{
-  // ... 现有字段 ...
-  tx_data_.crc16 = tools::get_crc16(/* ... */);
-  serial_.write(/* ... */);
-}
+void send(io::VisionToGimbal VisionToGimbal);
 ```
 
-### 2.3 在 `plan_thread` 中组包
+**禁止**添加任何其他 `send` 重载形式，例如：
+```cpp
+// ❌ 禁止：不允许多参数重载
+void send(bool control, bool fire, float yaw, ...);
+void send(bool control, bool fire, float yaw, ..., VisionToGimbal recv_data);
+```
+
+**禁止**添加以下单独参数处理方法：
+```cpp
+// ❌ 禁止：不允许单独处理参数
+GimbalToVision GetGimbalPackage() const;
+uint8_t GetFireMode() const;
+void SetGimbalPackage(VisionToGimbal recv_data);
+```
+
+### 2.3 在 `plan_thread` 中统一组包
 **文件**: `src/sentry_debug_mpc_ros.cpp`
 
-在 `plan_thread` 循环中添加/删除：
+所有下行数据必须在主程序的 `plan_thread` 中统一组包，然后调用 `send(VisionToGimbal)` 发送：
 
 ```cpp
-io::VisionToGimbal msg;
-msg.yaw = plan.yaw;
-// ... 现有字段 ...
-msg.xxx = xxx;  // 新增字段赋值
-gimbal.send(msg);
+auto plan_thread = std::thread([&]() {
+  while (!quit) {
+    // 1. 获取视觉规划结果
+    auto target = target_queue.front();
+    auto gs = gimbal.state();
+    auto plan = planner.plan(target, gs.bullet_speed);
+
+    // 2. 获取导航数据（通过 ROS 订阅回调）
+    float vx = ros2_publisher->get_nav_vx();
+    float vy = ros2_publisher->get_nav_vy();
+    uint8_t posture = ros2_publisher->get_nav_posture();
+    // ... 其他导航数据 ...
+
+    // 3. 统一组包（唯一入口）
+    io::VisionToGimbal msg;
+    msg.mode = plan.control ? (plan.fire ? 2 : 1) : 0;
+    msg.yaw = plan.yaw;
+    msg.yaw_vel = plan.yaw_vel;
+    msg.yaw_acc = plan.yaw_acc;
+    msg.pitch = plan.pitch;
+    msg.pitch_vel = plan.pitch_vel;
+    msg.pitch_acc = plan.pitch_acc;
+    msg.vx = vx;
+    msg.vy = vy;
+    msg.posture = posture;
+    // ... 其他字段 ...
+
+    // 4. 调用唯一的 send 方法发送
+    gimbal.send(msg);
+
+    std::this_thread::sleep_for(10ms);
+  }
+});
 ```
+
+**设计原则**：
+- **单一入口**：所有下行数据必须通过 `send(VisionToGimbal)` 发送
+- **集中处理**：组包逻辑集中在 `plan_thread` 中，便于维护和调试
+- **解耦设计**：`Gimbal` 类只负责串口收发，不参与业务逻辑
 
 ---
 
@@ -250,7 +297,7 @@ auto plan_thread = std::thread([&]() {
     float field1 = ros2_publisher->get_nav_field1();
     uint8_t field2 = ros2_publisher->get_nav_field2();
 
-    // 使用数据
+    // 使用数据组包（参考 2.3）
     // ...
   }
 });
@@ -266,6 +313,17 @@ auto plan_thread = std::thread([&]() {
 | 操作 | 需要修改 |
 |------|----------|
 | 下位机 → 视觉 | `GimbalToVision`, `GimbalState`, `read_thread` |
-| 视觉 → 下位机 | `VisionToGimbal`, `send()`, `plan_thread`组包 |
+| 视觉 → 下位机 | `VisionToGimbal`, **仅** `send(VisionToGimbal)`, `plan_thread`组包 |
 | 视觉 → 导航 | `.msg`, `ROS2Publisher`发布者, 主循环调用 |
 | 导航 → 视觉 | `.msg`, `ROS2Publisher`订阅+回调+getter, `plan_thread`使用 |
+
+---
+
+## 代码规范检查清单
+
+| 检查项 | 要求 |
+|--------|------|
+| `Gimbal` 类 `send` 方法 | **仅允许** `void send(io::VisionToGimbal)` |
+| 单独参数处理方法 | **禁止** `GetGimbalPackage()`, `GetFireMode()`, `SetGimbalPackage()` |
+| 组包位置 | 所有下行数据必须在 `plan_thread` 中组包 |
+| 互斥锁 | 多线程访问共享数据必须使用互斥锁保护 |
