@@ -107,6 +107,16 @@ void Gimbal::send(io::VisionToGimbal VisionToGimbal)
   tx_data_.crc16 = tools::get_crc16(
     reinterpret_cast<uint8_t *>(&tx_data_), sizeof(tx_data_) - sizeof(tx_data_.crc16));
 
+  tools::logger()->info(
+    "[Gimbal] 发送给下位机: mode={}, yaw={:.2f}, yaw_vel={:.2f}, yaw_acc={:.2f}, "
+    "pitch={:.2f}, pitch_vel={:.2f}, pitch_acc={:.2f}, vx={:.2f}, vy={:.2f}, "
+    "posture={}, spin_flag={}, scan={}, reverse={}, crc16=0x{:04X}",
+    tx_data_.mode, tx_data_.yaw, tx_data_.yaw_vel, tx_data_.yaw_acc,
+    tx_data_.pitch, tx_data_.pitch_vel, tx_data_.pitch_acc,
+    tx_data_.vx, tx_data_.vy,
+    tx_data_.posture, tx_data_.spin_flag, tx_data_.scan, tx_data_.reverse,
+    tx_data_.crc16);
+
   try {
     serial_.write(reinterpret_cast<uint8_t *>(&tx_data_), sizeof(tx_data_));
   } catch (const std::exception & e) {

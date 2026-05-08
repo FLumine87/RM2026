@@ -127,7 +127,7 @@ Plan Planner::plan(Target target, double bullet_speed, double current_yaw, doubl
       : low_speed_delay_time_;
 
   // 4. 预计算切换点事件（仅对关键时间点附近）
-  precompute_switch_events(target, bullet_speed, yaw0, fly_time);
+  precompute_switch_events(target, bullet_speed, yaw0, fly_time, gimbal_delay);
 
   // 5. 计算三个关键时间点的状态
   Plan plan;
@@ -256,14 +256,13 @@ Plan Planner::plan(Target target, double bullet_speed)
 }
 
 // ==================== 核心辅助方法 ====================
-void Planner::precompute_switch_events(Target& target, double bullet_speed, double yaw0, double fly_time) {
+void Planner::precompute_switch_events(Target& target, double bullet_speed, double yaw0, double fly_time, double gimbal_delay) {
     switch_events_.clear();
     
-    // 关键时间点：fire_delay 和 gimbal_delay（high/low_speed_delay_time_）
-    double key_times[] = {fire_delay_, high_speed_delay_time_, low_speed_delay_time_};
-    int num_key_times = 3;
+    // 只用 fire_delay 和 gimbal_delay 两个关键时间点，各搜索左右各一个切换点
+    double key_times[] = {fire_delay_, gimbal_delay};
+    int num_key_times = 2;
     
-    // 检测4个切换点：从每个关键时间点向左和向右各搜索1个
     std::vector<std::pair<int, double>> switches;  // (切换时间idx, 角度变化量)
     int last_armor_idx = -1;
     double last_yaw = 0, last_pitch = 0;

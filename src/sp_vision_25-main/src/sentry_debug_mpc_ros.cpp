@@ -607,7 +607,7 @@ public:
   float nav_gimbal_pitch_ = 0.0f;
   uint8_t nav_reverse_ = 0;
   bool has_gimbal_command_ = false;
-  rclcpp::Time last_gimbal_command_time_;
+  rclcpp::Time last_gimbal_command_time_{0, 0};
   double speed_multiplier_ = 0.8;
 
   visualization_msgs::msg::Marker position_marker_;
