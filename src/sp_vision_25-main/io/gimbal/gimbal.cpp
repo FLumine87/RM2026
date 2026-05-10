@@ -107,15 +107,29 @@ void Gimbal::send(io::VisionToGimbal VisionToGimbal)
   tx_data_.crc16 = tools::get_crc16(
     reinterpret_cast<uint8_t *>(&tx_data_), sizeof(tx_data_) - sizeof(tx_data_.crc16));
 
+  uint8_t mode = tx_data_.mode;
+  float yaw = tx_data_.yaw;
+  float yaw_vel = tx_data_.yaw_vel;
+  float yaw_acc = tx_data_.yaw_acc;
+  float pitch = tx_data_.pitch;
+  float pitch_vel = tx_data_.pitch_vel;
+  float pitch_acc = tx_data_.pitch_acc;
+  float vx = tx_data_.vx;
+  float vy = tx_data_.vy;
+  uint8_t posture = tx_data_.posture;
+  uint8_t spin_flag = tx_data_.spin_flag;
+  uint8_t scan = tx_data_.scan;
+  uint8_t reverse = tx_data_.reverse;
+  uint16_t crc16 = tx_data_.crc16;
   tools::logger()->info(
     "[Gimbal] 发送给下位机: mode={}, yaw={:.2f}, yaw_vel={:.2f}, yaw_acc={:.2f}, "
     "pitch={:.2f}, pitch_vel={:.2f}, pitch_acc={:.2f}, vx={:.2f}, vy={:.2f}, "
     "posture={}, spin_flag={}, scan={}, reverse={}, crc16=0x{:04X}",
-    tx_data_.mode, tx_data_.yaw, tx_data_.yaw_vel, tx_data_.yaw_acc,
-    tx_data_.pitch, tx_data_.pitch_vel, tx_data_.pitch_acc,
-    tx_data_.vx, tx_data_.vy,
-    tx_data_.posture, tx_data_.spin_flag, tx_data_.scan, tx_data_.reverse,
-    tx_data_.crc16);
+    mode, yaw, yaw_vel, yaw_acc,
+    pitch, pitch_vel, pitch_acc,
+    vx, vy,
+    posture, spin_flag, scan, reverse,
+    crc16);
 
   try {
     serial_.write(reinterpret_cast<uint8_t *>(&tx_data_), sizeof(tx_data_));
@@ -212,6 +226,16 @@ void Gimbal::read_thread()
           state_.fort_status = rx_data_.fort_status;
           state_.reverse = rx_data_.reverse;
           state_.mode = rx_data_.mode;
+
+          tools::logger()->info(
+            "[Gimbal] MCU Data | yaw: {:.2f} | pitch: {:.2f} | yaw_vel: {:.2f} | pitch_vel: {:.2f} | "
+            "bullet_speed: {:.1f} | bullet_count: {} | is_play: {} | time: {} | "
+            "pos({:.2f}, {:.2f}) | tar_pos({:.2f}, {:.2f}) | "
+            "hp: {} | outpost_hp: {} | mode: {} | reverse: {}",
+            state_.yaw, state_.pitch, state_.yaw_vel, state_.pitch_vel,
+            state_.bullet_speed, state_.bullet_count, state_.is_play, state_.time_,
+            state_.positon_x, state_.positon_y, state_.tar_positon_x, state_.tar_positon_y,
+            state_.own_hp_, state_.outpost_HP, state_.mode, state_.reverse);
 
           switch (rx_data_.mode) {
             case 0:

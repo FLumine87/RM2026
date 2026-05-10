@@ -185,6 +185,8 @@ if(ament_cmake_FOUND AND rclcpp_FOUND AND std_msgs_FOUND AND geometry_msgs_FOUND
     # 强制添加包含路径，确保能找到生成的头文件
     include_directories("${CMAKE_CURRENT_SOURCE_DIR}/../../install/auto_aim_interfaces/include")
     include_directories("${CMAKE_CURRENT_SOURCE_DIR}/../../install/auto_aim_interfaces/include/auto_aim_interfaces")
+    include_directories("/home/a/aaaa/install/rm_serial_driver_nav_msgs/include")
+    include_directories("/home/a/aaaa/install/rm_serial_driver_nav_msgs/include/rm_serial_driver_nav_msgs")
     
     # 添加 auto_aim_debug_mpc_rosdebug 可执行文件
     add_executable(auto_aim_debug_mpc_rosdebug src/auto_aim_debug_mpc_rosdebug.cpp)
@@ -202,10 +204,9 @@ if(ament_cmake_FOUND AND rclcpp_FOUND AND std_msgs_FOUND AND geometry_msgs_FOUND
         visualization_msgs
     )
     
-    # 直接链接类型支持库（如果存在）
+    # 直接链接 auto_aim_interfaces 类型支持库（如果存在）
     set(AUTO_AIM_INTERFACES_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../install/auto_aim_interfaces/lib")
     if(EXISTS "${AUTO_AIM_INTERFACES_LIB_DIR}")
-        # 查找所有类型支持库文件
         file(GLOB AUTO_AIM_INTERFACES_LIBS "${AUTO_AIM_INTERFACES_LIB_DIR}/libauto_aim_interfaces__rosidl_typesupport_*.so")
         if(AUTO_AIM_INTERFACES_LIBS)
             message(STATUS "Linking against auto_aim_interfaces typesupport libraries: ${AUTO_AIM_INTERFACES_LIBS}")
@@ -216,6 +217,8 @@ if(ament_cmake_FOUND AND rclcpp_FOUND AND std_msgs_FOUND AND geometry_msgs_FOUND
     else()
         message(WARNING "auto_aim_interfaces lib directory not found: ${AUTO_AIM_INTERFACES_LIB_DIR}")
     endif()
+
+    # auto_aim_debug_mpc_rosdebug 不需要链接 rm_serial_driver_nav_msgs（只需要 auto_aim_interfaces）
     
     # 添加 auto_aim_test_ros 可执行文件
     add_executable(auto_aim_test_ros tests/auto_aim_test_ros.cpp)
@@ -233,10 +236,9 @@ if(ament_cmake_FOUND AND rclcpp_FOUND AND std_msgs_FOUND AND geometry_msgs_FOUND
         visualization_msgs
     )
     
-    # 直接链接类型支持库（如果存在）
+    # 直接链接 auto_aim_interfaces 类型支持库（如果存在）
     set(AUTO_AIM_INTERFACES_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../install/auto_aim_interfaces/lib")
     if(EXISTS "${AUTO_AIM_INTERFACES_LIB_DIR}")
-        # 查找所有类型支持库文件
         file(GLOB AUTO_AIM_INTERFACES_LIBS "${AUTO_AIM_INTERFACES_LIB_DIR}/libauto_aim_interfaces__rosidl_typesupport_*.so")
         if(AUTO_AIM_INTERFACES_LIBS)
             message(STATUS "Linking against auto_aim_interfaces typesupport libraries for auto_aim_test_ros: ${AUTO_AIM_INTERFACES_LIBS}")
@@ -247,8 +249,10 @@ if(ament_cmake_FOUND AND rclcpp_FOUND AND std_msgs_FOUND AND geometry_msgs_FOUND
     else()
         message(WARNING "auto_aim_interfaces lib directory not found: ${AUTO_AIM_INTERFACES_LIB_DIR}")
     endif()
+
+    # auto_aim_test_ros 不需要链接 rm_serial_driver_nav_msgs（只需要 auto_aim_interfaces）
     
-# 添加 auto_aim_debug_mpc_rosbc 可执行文件
+    # 添加 auto_aim_debug_mpc_rosbc 可执行文件
     add_executable(auto_aim_debug_mpc_rosbc src/auto_aim_debug_mpc_rosbc.cpp)
 
     # 添加基本依赖
@@ -264,10 +268,9 @@ if(ament_cmake_FOUND AND rclcpp_FOUND AND std_msgs_FOUND AND geometry_msgs_FOUND
         visualization_msgs
     )
 
-    # 直接链接类型支持库（如果存在）
+    # 直接链接 auto_aim_interfaces 类型支持库（如果存在）
     set(AUTO_AIM_INTERFACES_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../install/auto_aim_interfaces/lib")
     if(EXISTS "${AUTO_AIM_INTERFACES_LIB_DIR}")
-        # 查找所有类型支持库文件
         file(GLOB AUTO_AIM_INTERFACES_LIBS "${AUTO_AIM_INTERFACES_LIB_DIR}/libauto_aim_interfaces__rosidl_typesupport_*.so")
         if(AUTO_AIM_INTERFACES_LIBS)
             message(STATUS "Linking against auto_aim_interfaces typesupport libraries for auto_aim_debug_mpc_rosbc: ${AUTO_AIM_INTERFACES_LIBS}")
@@ -278,6 +281,8 @@ if(ament_cmake_FOUND AND rclcpp_FOUND AND std_msgs_FOUND AND geometry_msgs_FOUND
     else()
         message(WARNING "auto_aim_interfaces lib directory not found: ${AUTO_AIM_INTERFACES_LIB_DIR}")
     endif()
+
+    # auto_aim_debug_mpc_rosbc 不需要链接 rm_serial_driver_nav_msgs（只需要 auto_aim_interfaces）
     
     # 添加 auto_aim_debug_mpcst_ros 可执行文件
     add_executable(auto_aim_debug_mpcst_ros src/auto_aim_debug_mpcst_ros.cpp)
@@ -295,10 +300,9 @@ if(ament_cmake_FOUND AND rclcpp_FOUND AND std_msgs_FOUND AND geometry_msgs_FOUND
         visualization_msgs
     )
 
-    # 直接链接类型支持库（如果存在）
+    # 直接链接 auto_aim_interfaces 类型支持库（如果存在）
     set(AUTO_AIM_INTERFACES_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../install/auto_aim_interfaces/lib")
     if(EXISTS "${AUTO_AIM_INTERFACES_LIB_DIR}")
-        # 查找所有类型支持库文件
         file(GLOB AUTO_AIM_INTERFACES_LIBS "${AUTO_AIM_INTERFACES_LIB_DIR}/libauto_aim_interfaces__rosidl_typesupport_*.so")
         if(AUTO_AIM_INTERFACES_LIBS)
             message(STATUS "Linking against auto_aim_interfaces typesupport libraries for auto_aim_debug_mpcst_ros: ${AUTO_AIM_INTERFACES_LIBS}")
@@ -309,6 +313,8 @@ if(ament_cmake_FOUND AND rclcpp_FOUND AND std_msgs_FOUND AND geometry_msgs_FOUND
     else()
         message(WARNING "auto_aim_interfaces lib directory not found: ${AUTO_AIM_INTERFACES_LIB_DIR}")
     endif()
+
+    # auto_aim_debug_mpcst_ros 不需要链接 rm_serial_driver_nav_msgs（只需要 auto_aim_interfaces）
     
     # 添加 sentry_debug_mpc_ros 可执行文件
     add_executable(sentry_debug_mpc_ros src/sentry_debug_mpc_ros.cpp)
@@ -326,10 +332,9 @@ if(ament_cmake_FOUND AND rclcpp_FOUND AND std_msgs_FOUND AND geometry_msgs_FOUND
         visualization_msgs
     )
 
-    # 直接链接类型支持库（如果存在）
+    # 直接链接 auto_aim_interfaces 类型支持库（如果存在）
     set(AUTO_AIM_INTERFACES_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../install/auto_aim_interfaces/lib")
     if(EXISTS "${AUTO_AIM_INTERFACES_LIB_DIR}")
-        # 查找所有类型支持库文件
         file(GLOB AUTO_AIM_INTERFACES_LIBS "${AUTO_AIM_INTERFACES_LIB_DIR}/libauto_aim_interfaces__rosidl_typesupport_*.so")
         if(AUTO_AIM_INTERFACES_LIBS)
             message(STATUS "Linking against auto_aim_interfaces typesupport libraries for sentry_debug_mpc_ros: ${AUTO_AIM_INTERFACES_LIBS}")
@@ -339,6 +344,20 @@ if(ament_cmake_FOUND AND rclcpp_FOUND AND std_msgs_FOUND AND geometry_msgs_FOUND
         endif()
     else()
         message(WARNING "auto_aim_interfaces lib directory not found: ${AUTO_AIM_INTERFACES_LIB_DIR}")
+    endif()
+
+    # 直接链接 rm_serial_driver_nav_msgs 类型支持库（如果存在）
+    set(RM_SERIAL_DRIVER_NAV_MSGS_LIB_DIR "/home/a/aaaa/install/rm_serial_driver_nav_msgs/lib")
+    if(EXISTS "${RM_SERIAL_DRIVER_NAV_MSGS_LIB_DIR}")
+        file(GLOB RM_SERIAL_DRIVER_NAV_MSGS_LIBS "${RM_SERIAL_DRIVER_NAV_MSGS_LIB_DIR}/librm_serial_driver_nav_msgs__rosidl_typesupport_*.so")
+        if(RM_SERIAL_DRIVER_NAV_MSGS_LIBS)
+            message(STATUS "Linking against rm_serial_driver_nav_msgs typesupport libraries for sentry_debug_mpc_ros: ${RM_SERIAL_DRIVER_NAV_MSGS_LIBS}")
+            target_link_libraries(sentry_debug_mpc_ros ${RM_SERIAL_DRIVER_NAV_MSGS_LIBS})
+        else()
+            message(WARNING "No rm_serial_driver_nav_msgs typesupport libraries found in ${RM_SERIAL_DRIVER_NAV_MSGS_LIB_DIR}")
+        endif()
+    else()
+        message(WARNING "rm_serial_driver_nav_msgs lib directory not found: ${RM_SERIAL_DRIVER_NAV_MSGS_LIB_DIR}")
     endif()
     
     # 添加 bullet_dectetor_rostest 可执行文件
@@ -357,10 +376,9 @@ if(ament_cmake_FOUND AND rclcpp_FOUND AND std_msgs_FOUND AND geometry_msgs_FOUND
         visualization_msgs
     )
     
-    # 直接链接类型支持库（如果存在）
+    # 直接链接 auto_aim_interfaces 类型支持库（如果存在）
     set(AUTO_AIM_INTERFACES_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../install/auto_aim_interfaces/lib")
     if(EXISTS "${AUTO_AIM_INTERFACES_LIB_DIR}")
-        # 查找所有类型支持库文件
         file(GLOB AUTO_AIM_INTERFACES_LIBS "${AUTO_AIM_INTERFACES_LIB_DIR}/libauto_aim_interfaces__rosidl_typesupport_*.so")
         if(AUTO_AIM_INTERFACES_LIBS)
             message(STATUS "Linking against auto_aim_interfaces typesupport libraries for bullet_dectetor_rostest: ${AUTO_AIM_INTERFACES_LIBS}")
@@ -371,6 +389,8 @@ if(ament_cmake_FOUND AND rclcpp_FOUND AND std_msgs_FOUND AND geometry_msgs_FOUND
     else()
         message(WARNING "auto_aim_interfaces lib directory not found: ${AUTO_AIM_INTERFACES_LIB_DIR}")
     endif()
+
+    # bullet_dectetor_rostest 不需要链接 rm_serial_driver_nav_msgs（只需要 auto_aim_interfaces）
 else()
     message(WARNING "ROS2 dependencies not fully found, skipping ROS2-related executables")
     # 即使条件不满足，也添加目标但不构建，这样至少可以看到目标存在

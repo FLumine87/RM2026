@@ -35,19 +35,7 @@
 #include "visualization_msgs/msg/marker.hpp"
 #include "visualization_msgs/msg/marker_array.hpp"
 
-// 尝试不同的include路径
-#ifdef ROS2_INCLUDE_PATH
-#include <auto_aim_interfaces/msg/armor.hpp>
-#include <auto_aim_interfaces/msg/armors.hpp>
-#include <auto_aim_interfaces/msg/target.hpp>
-#include <auto_aim_interfaces/msg/target_sentry.hpp>
-#include <auto_aim_interfaces/msg/gimbal.hpp>
-#include <auto_aim_interfaces/msg/gimbal_feedback.hpp>
-#include <auto_aim_interfaces/msg/sentry_status.hpp>
-#include <auto_aim_interfaces/msg/from_decision.hpp>
-#include <auto_aim_interfaces/msg/gimbal_command.hpp>
-#include <sensor_msgs/msg/joint_state.hpp>
-#else
+// 视觉相关消息使用 auto_aim_interfaces
 #include "auto_aim_interfaces/msg/armor.hpp"
 #include "auto_aim_interfaces/msg/armors.hpp"
 #include "auto_aim_interfaces/msg/target.hpp"
@@ -55,10 +43,14 @@
 #include "auto_aim_interfaces/msg/gimbal.hpp"
 #include "auto_aim_interfaces/msg/gimbal_feedback.hpp"
 #include "auto_aim_interfaces/msg/sentry_status.hpp"
-#include "auto_aim_interfaces/msg/from_decision.hpp"
-#include "auto_aim_interfaces/msg/gimbal_command.hpp"
+
+// 导航相关消息使用 rm_serial_driver_nav_msgs（与 udp_gimbal_vision_node.cpp 保持一致）
+#include "rm_serial_driver_nav_msgs/msg/from_decision.hpp"
+#include "rm_serial_driver_nav_msgs/msg/gimbal_command.hpp"
+#include "rm_serial_driver_nav_msgs/msg/from_sentry.hpp"
+#include "rm_serial_driver_nav_msgs/msg/target.hpp"
+
 #include "sensor_msgs/msg/joint_state.hpp"
-#endif
 
 using namespace std::chrono_literals;
 
@@ -77,14 +69,14 @@ public:
     , gimbal_feedback_publisher_(this->create_publisher<auto_aim_interfaces::msg::GimbalFeedback>("gimbal_feedback", 10))
     , marker_pub_(this->create_publisher<visualization_msgs::msg::MarkerArray>("visualization_marker", 10))
     , joint_state_pub_(this->create_publisher<sensor_msgs::msg::JointState>("/joint_states", rclcpp::SensorDataQoS()))
-    , sentry_status_pub_(this->create_publisher<auto_aim_interfaces::msg::SentryStatus>("/from_sentry", 10))
-    , target_sentry_pub_(this->create_publisher<auto_aim_interfaces::msg::TargetSentry>(
+    , sentry_status_pub_(this->create_publisher<rm_serial_driver_nav_msgs::msg::FromSentry>("/from_sentry", 10))
+    , target_sentry_pub_(this->create_publisher<rm_serial_driver_nav_msgs::msg::Target>(
         "/tracker/target", rclcpp::QoS(10).best_effort()))
     , cmd_vel_sub_(this->create_subscription<geometry_msgs::msg::Twist>(
         "/cmd_vel", 10, std::bind(&ROS2Publisher::cmd_vel_callback, this, std::placeholders::_1)))
-  , posture_sub_(this->create_subscription<auto_aim_interfaces::msg::FromDecision>(
+  , posture_sub_(this->create_subscription<rm_serial_driver_nav_msgs::msg::FromDecision>(
         "/posture_number", 10, std::bind(&ROS2Publisher::posture_callback, this, std::placeholders::_1)))
-  , gimbal_command_sub_(this->create_subscription<auto_aim_interfaces::msg::GimbalCommand>(
+  , gimbal_command_sub_(this->create_subscription<rm_serial_driver_nav_msgs::msg::GimbalCommand>(
         "/gimbal_command", 10, std::bind(&ROS2Publisher::gimbal_command_callback, this, std::placeholders::_1)))
   , speed_multiplier_sub_(this->create_subscription<std_msgs::msg::Float64>(
         "/speed_multiplier", 10, std::bind(&ROS2Publisher::speed_multiplier_callback, this, std::placeholders::_1)))
@@ -293,9 +285,9 @@ public:
 
   void publish_target_sentry(const auto_aim::Target & target)
   {
-    auto target_sentry_msg = std::make_shared<auto_aim_interfaces::msg::TargetSentry>();
+    auto target_sentry_msg = std::make_shared<rm_serial_driver_nav_msgs::msg::Target>();
     target_sentry_msg->header.stamp = this->now();
-    target_sentry_msg->header.frame_id = "odom";
+    target_sentry_msg->header.frame_id = "gimbal_pitch_odom";
     target_sentry_msg->tracking = true;
     target_sentry_msg->position.x = target.ekf_x()[0];
     target_sentry_msg->position.y = target.ekf_x()[2];
@@ -306,9 +298,9 @@ public:
 
   void publish_empty_target_sentry()
   {
-    auto target_sentry_msg = std::make_shared<auto_aim_interfaces::msg::TargetSentry>();
+    auto target_sentry_msg = std::make_shared<rm_serial_driver_nav_msgs::msg::Target>();
     target_sentry_msg->header.stamp = this->now();
-    target_sentry_msg->header.frame_id = "odom";
+    target_sentry_msg->header.frame_id = "gimbal_pitch_odom";
     target_sentry_msg->tracking = false;
 
     target_sentry_pub_->publish(*target_sentry_msg);
@@ -382,17 +374,20 @@ public:
     joint_state_pub_->publish(*joint_state_msg);
   }
 
-  void publish_sentry_status(const io::GimbalState & state)
+  void publish_sentry_status(const io::GimbalState & state, uint8_t mode)
   {
-    auto sentry_status_msg = std::make_shared<auto_aim_interfaces::msg::SentryStatus>();
+    auto sentry_status_msg = std::make_shared<rm_serial_driver_nav_msgs::msg::FromSentry>();
     sentry_status_msg->is_play = state.is_play;
     sentry_status_msg->time = state.time_;
     sentry_status_msg->own_hp = state.own_hp_;
     sentry_status_msg->allowance = state.bullet_count;
     sentry_status_msg->outpost_hp = state.outpost_HP;
-    sentry_status_msg->mode = state.mode;
+    sentry_status_msg->mode = mode;
     sentry_status_msg->reverse = state.reverse;
-    
+    sentry_status_msg->position_x = state.positon_x;
+    sentry_status_msg->position_y = state.positon_y;
+    sentry_status_msg->tar_position_x = state.tar_positon_x;
+    sentry_status_msg->tar_position_y = state.tar_positon_y;
     sentry_status_pub_->publish(*sentry_status_msg);
   }
 
@@ -406,15 +401,19 @@ public:
     nav_vy_ = msg->linear.y;
   }
 
-  void posture_callback(const auto_aim_interfaces::msg::FromDecision::SharedPtr msg)
+  void posture_callback(const rm_serial_driver_nav_msgs::msg::FromDecision::SharedPtr msg)
   {
     std::lock_guard<std::mutex> lock(nav_mutex_);
     nav_posture_ = msg->posture;
     nav_spin_flag_ = msg->spin_flag;
     nav_scan_ = msg->scan;
+    RCLCPP_INFO(this->get_logger(), "[posture_callback] Received - posture: %u, spin_flag: %u, scan: %u", 
+                static_cast<unsigned int>(nav_posture_), 
+                static_cast<unsigned int>(nav_spin_flag_), 
+                static_cast<unsigned int>(nav_scan_));
   }
 
-  void gimbal_command_callback(const auto_aim_interfaces::msg::GimbalCommand::SharedPtr msg)
+  void gimbal_command_callback(const rm_serial_driver_nav_msgs::msg::GimbalCommand::SharedPtr msg)
   {
     std::lock_guard<std::mutex> lock(nav_mutex_);
     nav_gimbal_yaw_ = msg->yaw;
@@ -422,6 +421,8 @@ public:
     nav_reverse_ = msg->reverse;
     has_gimbal_command_ = true;
     last_gimbal_command_time_ = this->now();
+    RCLCPP_INFO(this->get_logger(), "[gimbal_command_callback] Received - yaw: %.2f, pitch: %.2f, reverse: %u", 
+                nav_gimbal_yaw_, nav_gimbal_pitch_, static_cast<unsigned int>(nav_reverse_));
   }
 
   void speed_multiplier_callback(const std_msgs::msg::Float64::SharedPtr msg)
@@ -589,11 +590,11 @@ public:
   rclcpp::Publisher<auto_aim_interfaces::msg::GimbalFeedback>::SharedPtr gimbal_feedback_publisher_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_pub_;
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_state_pub_;
-  rclcpp::Publisher<auto_aim_interfaces::msg::SentryStatus>::SharedPtr sentry_status_pub_;
-  rclcpp::Publisher<auto_aim_interfaces::msg::TargetSentry>::SharedPtr target_sentry_pub_;
+  rclcpp::Publisher<rm_serial_driver_nav_msgs::msg::FromSentry>::SharedPtr sentry_status_pub_;
+  rclcpp::Publisher<rm_serial_driver_nav_msgs::msg::Target>::SharedPtr target_sentry_pub_;
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub_;
-  rclcpp::Subscription<auto_aim_interfaces::msg::FromDecision>::SharedPtr posture_sub_;
-  rclcpp::Subscription<auto_aim_interfaces::msg::GimbalCommand>::SharedPtr gimbal_command_sub_;
+  rclcpp::Subscription<rm_serial_driver_nav_msgs::msg::FromDecision>::SharedPtr posture_sub_;
+  rclcpp::Subscription<rm_serial_driver_nav_msgs::msg::GimbalCommand>::SharedPtr gimbal_command_sub_;
   rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr speed_multiplier_sub_;
   
   // 导航相关变量
@@ -784,10 +785,15 @@ int main(int argc, char * argv[])
       case io::GimbalMode::BIG_BUFF: mode_value = 3; break;
     }
     ros2_publisher->publish_gimbal_feedback(gs, mode_value, q);
-    
+
     // 发布关节状态和哨兵状态消息
     ros2_publisher->publish_joint_state(gs);
-    ros2_publisher->publish_sentry_status(gs);
+    uint8_t vision_mode = 0;
+    {
+      std::lock_guard<std::mutex> lock(plan_mutex);
+      vision_mode = latest_plan.control ? (latest_plan.fire ? 2 : 1) : 0;
+    }
+    ros2_publisher->publish_sentry_status(gs, vision_mode);
 //================================================================  
   
     auto armors = yolo.detect(img);
