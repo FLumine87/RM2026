@@ -407,10 +407,12 @@ public:
     nav_posture_ = msg->posture;
     nav_spin_flag_ = msg->spin_flag;
     nav_scan_ = msg->scan;
-    RCLCPP_INFO(this->get_logger(), "[posture_callback] Received - posture: %u, spin_flag: %u, scan: %u", 
+    nav_terrain_flag_ = msg->terrain_flag;
+    RCLCPP_INFO(this->get_logger(), "[posture_callback] Received - posture: %u, spin_flag: %u, scan: %u, terrain_flag: %u", 
                 static_cast<unsigned int>(nav_posture_), 
                 static_cast<unsigned int>(nav_spin_flag_), 
-                static_cast<unsigned int>(nav_scan_));
+                static_cast<unsigned int>(nav_scan_),
+                static_cast<unsigned int>(nav_terrain_flag_));
   }
 
   void gimbal_command_callback(const rm_serial_driver_nav_msgs::msg::GimbalCommand::SharedPtr msg)
@@ -462,6 +464,12 @@ public:
   {
     std::lock_guard<std::mutex> lock(nav_mutex_);
     return nav_scan_;
+  }
+
+  uint8_t get_nav_terrain_flag() const
+  {
+    std::lock_guard<std::mutex> lock(nav_mutex_);
+    return nav_terrain_flag_;
   }
 
   float get_nav_gimbal_yaw() const
@@ -604,6 +612,7 @@ public:
   uint8_t nav_posture_ = 0;
   uint8_t nav_spin_flag_ = 0;
   uint8_t nav_scan_ = 0;
+  uint8_t nav_terrain_flag_ = 0;
   float nav_gimbal_yaw_ = 0.0f;
   float nav_gimbal_pitch_ = 0.0f;
   uint8_t nav_reverse_ = 0;
@@ -684,6 +693,7 @@ int main(int argc, char * argv[])
       uint8_t spin_flag = ros2_publisher->get_nav_spin_flag();
       uint8_t scan = ros2_publisher->get_nav_scan();
       uint8_t reverse = ros2_publisher->get_nav_reverse();
+      uint8_t terrain_flag = ros2_publisher->get_nav_terrain_flag();
 
       // 检查是否收到云台指令，以及指令是否在超时时间内（500ms）
       bool use_gimbal_command = false;
@@ -713,6 +723,7 @@ int main(int argc, char * argv[])
       msg.spin_flag = spin_flag;
       msg.scan = scan;
       msg.reverse = reverse;
+      msg.terrain_flag = terrain_flag;
 
       gimbal.send(msg);
 

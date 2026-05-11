@@ -93,7 +93,15 @@ std::list<Target> Tracker::track(
 // if (state_ == "lost") return {};
 
 // 修改后
-if (state_ == "lost" || state_ == "detecting") return {};  // detecting 状态也返回空
+  if (state_ == "lost" || state_ == "detecting") return {};  // detecting 状态也返回空
+
+  // 检查目标距离是否超过12m，超过则不锁定
+  Eigen::Vector3d position(target_.ekf_x()[0], target_.ekf_x()[2], target_.ekf_x()[4]);
+  double distance = position.head<3>().norm();  
+  if (distance > 12.0) {
+    state_ = "lost";
+    return {};
+  }
 
   std::list<Target> targets = {target_};
   return targets;

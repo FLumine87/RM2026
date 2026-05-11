@@ -103,6 +103,7 @@ void Gimbal::send(io::VisionToGimbal VisionToGimbal)
   tx_data_.posture = VisionToGimbal.posture;
   tx_data_.spin_flag = VisionToGimbal.spin_flag;
   tx_data_.scan = VisionToGimbal.scan;
+  tx_data_.terrain_flag = VisionToGimbal.terrain_flag;
   tx_data_.reverse = VisionToGimbal.reverse;
   tx_data_.crc16 = tools::get_crc16(
     reinterpret_cast<uint8_t *>(&tx_data_), sizeof(tx_data_) - sizeof(tx_data_.crc16));
@@ -119,16 +120,17 @@ void Gimbal::send(io::VisionToGimbal VisionToGimbal)
   uint8_t posture = tx_data_.posture;
   uint8_t spin_flag = tx_data_.spin_flag;
   uint8_t scan = tx_data_.scan;
+  uint8_t terrain_flag = tx_data_.terrain_flag;
   uint8_t reverse = tx_data_.reverse;
   uint16_t crc16 = tx_data_.crc16;
   tools::logger()->info(
     "[Gimbal] 发送给下位机: mode={}, yaw={:.2f}, yaw_vel={:.2f}, yaw_acc={:.2f}, "
     "pitch={:.2f}, pitch_vel={:.2f}, pitch_acc={:.2f}, vx={:.2f}, vy={:.2f}, "
-    "posture={}, spin_flag={}, scan={}, reverse={}, crc16=0x{:04X}",
+    "posture={}, spin_flag={}, scan={}, reverse={}, terrain_flag={}, crc16=0x{:04X}",
     mode, yaw, yaw_vel, yaw_acc,
     pitch, pitch_vel, pitch_acc,
     vx, vy,
-    posture, spin_flag, scan, reverse,
+    posture, spin_flag, scan, reverse, terrain_flag,
     crc16);
 
   try {

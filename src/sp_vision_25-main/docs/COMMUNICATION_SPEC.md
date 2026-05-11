@@ -91,6 +91,34 @@ uint8_t GetFireMode() const;
 void SetGimbalPackage(VisionToGimbal recv_data);
 ```
 
+**文件**: `io/gimbal/gimbal.cpp`
+
+在 `send(io::VisionToGimbal VisionToGimbal)` 方法实现中，需要将 `VisionToGimbal` 参数的字段复制到 `tx_data_`：
+
+```cpp
+void Gimbal::send(io::VisionToGimbal VisionToGimbal)
+{
+  tx_data_.mode = VisionToGimbal.mode;
+  tx_data_.yaw = VisionToGimbal.yaw;
+  tx_data_.yaw_vel = VisionToGimbal.yaw_vel;
+  tx_data_.yaw_acc = VisionToGimbal.yaw_acc;
+  tx_data_.pitch = VisionToGimbal.pitch;
+  tx_data_.pitch_vel = VisionToGimbal.pitch_vel;
+  tx_data_.pitch_acc = VisionToGimbal.pitch_acc;
+  tx_data_.vx = VisionToGimbal.vx;
+  tx_data_.vy = VisionToGimbal.vy;
+  tx_data_.posture = VisionToGimbal.posture;
+  tx_data_.spin_flag = VisionToGimbal.spin_flag;
+  tx_data_.scan = VisionToGimbal.scan;
+  tx_data_.reverse = VisionToGimbal.reverse;
+  // ↑ 新增字段也必须添加在此处，例如：
+  // tx_data_.terrain_flag = VisionToGimbal.terrain_flag;
+  tx_data_.crc16 = tools::get_crc16(
+    reinterpret_cast<uint8_t *>(&tx_data_), sizeof(tx_data_) - sizeof(tx_data_.crc16));
+  // ... 日志输出和串口发送 ...
+}
+```
+
 ### 2.3 在 `plan_thread` 中统一组包
 **文件**: `src/sentry_debug_mpc_ros.cpp`
 
@@ -122,7 +150,8 @@ auto plan_thread = std::thread([&]() {
     msg.vx = vx;
     msg.vy = vy;
     msg.posture = posture;
-    // ... 其他字段 ...
+    // ... 其他字段（如新增的 terrain_flag） ...
+    // msg.terrain_flag = ros2_publisher->get_nav_terrain_flag();
 
     // 4. 调用唯一的 send 方法发送
     gimbal.send(msg);
@@ -313,7 +342,7 @@ auto plan_thread = std::thread([&]() {
 | 操作 | 需要修改 |
 |------|----------|
 | 下位机 → 视觉 | `GimbalToVision`, `GimbalState`, `read_thread` |
-| 视觉 → 下位机 | `VisionToGimbal`, **仅** `send(VisionToGimbal)`, `plan_thread`组包 |
+| 视觉 → 下位机 | `VisionToGimbal` (hpp), **`send()` 方法实现** (cpp), `plan_thread`组包 |
 | 视觉 → 导航 | `.msg`, `ROS2Publisher`发布者, 主循环调用 |
 | 导航 → 视觉 | `.msg`, `ROS2Publisher`订阅+回调+getter, `plan_thread`使用 |
 
@@ -327,3 +356,4 @@ auto plan_thread = std::thread([&]() {
 | 单独参数处理方法 | **禁止** `GetGimbalPackage()`, `GetFireMode()`, `SetGimbalPackage()` |
 | 组包位置 | 所有下行数据必须在 `plan_thread` 中组包 |
 | 互斥锁 | 多线程访问共享数据必须使用互斥锁保护 |
+| `send()` 实现 | 必须将 `VisionToGimbal` 参数的字段复制到 `tx_data_` |

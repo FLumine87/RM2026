@@ -58,7 +58,8 @@ struct __attribute__((packed)) VisionToGimbal
   uint8_t posture;       // 姿态指令
   uint8_t spin_flag;     // 旋转指令
   uint8_t scan;          // 扫描指令
-  uint8_t reverse;        // 预留位
+  uint8_t terrain_flag;  // 地形标志
+  uint8_t reverse;       // 预留位
   uint16_t crc16;        // 校验值
 };
 
