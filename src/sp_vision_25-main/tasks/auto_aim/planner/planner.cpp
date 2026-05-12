@@ -386,8 +386,8 @@ void Planner::precompute_switch_events(Target& target, double bullet_speed, doub
             
             SwitchEvent event;
             event.t_switch = chosen_switch;
-            event.t_start = std::max(TIME_MIN, chosen_switch - half_steps);
-            event.t_end = std::min(TIME_MAX, chosen_switch + half_steps);
+            event.t_start = chosen_switch - half_steps;
+            event.t_end = chosen_switch + half_steps;
             
             Target target_start = target;
             target_start.predict(event.t_start * DT + fly_time);
@@ -622,8 +622,8 @@ PlanDebug Planner::debug(Target target, double bullet_speed)
           continue;
         }
         event.t_switch = t;
-        event.t_start = std::max(TIME_MIN, t - half_steps);
-        event.t_end = std::min(TIME_MAX, t + half_steps);
+        event.t_start = t - half_steps;
+        event.t_end = t + half_steps;
         
         // 获取过渡段起点状态（切换点前的装甲板）
         Target target_start = target_predicted;
