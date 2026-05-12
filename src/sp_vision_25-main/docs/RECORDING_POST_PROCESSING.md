@@ -1,6 +1,7 @@
 # 录制视频赛后处理指南（Windows系统）
 
 ## 目录
+
 1. [环境准备](#环境准备)
 2. [文件结构说明](#文件结构说明)
 3. [解压文件](#解压文件)
@@ -12,19 +13,21 @@
 9. [完整处理流程示例](#完整处理流程示例)
 10. [常见问题解决](#常见问题解决)
 
----
+***
 
 ## 1. 环境准备
 
 ### 1.1 安装必要工具
 
 #### FFmpeg（核心工具）
-- **下载地址**：https://ffmpeg.org/download.html#build-windows
+
+- **下载地址**：<https://ffmpeg.org/download.html#build-windows>
 - **选择版本**：下载 `full_build` 的 Windows 版本
 - **配置环境变量**：将 `ffmpeg.exe` 所在目录添加到系统 PATH
 
 #### 7-Zip（解压工具）
-- **下载地址**：https://www.7-zip.org/
+
+- **下载地址**：<https://www.7-zip.org/>
 - **安装路径**：建议安装到 `C:\Program Files\7-Zip\`
 
 ### 1.2 验证安装
@@ -38,7 +41,7 @@ ffmpeg -version
 
 如果显示版本信息，说明安装成功。
 
----
+***
 
 ## 2. 文件结构说明
 
@@ -57,7 +60,7 @@ records/
 - **.avi 文件**：未压缩的视频文件
 - **.txt 文件**：陀螺仪四元数数据（格式：`时间戳 w x y z`）
 
----
+***
 
 ## 3. 解压文件
 
@@ -97,7 +100,7 @@ pause
 7z x *.7z -o"all_records" -y
 ```
 
----
+***
 
 ## 4. 视频拼接
 
@@ -144,7 +147,7 @@ ffmpeg -f concat -safe 0 -i file_list.txt -c:v libx264 -crf 18 -c:a copy output_
 copy /b 2024-01-15_10-00-00.txt + 2024-01-15_10-02-00.txt + 2024-01-15_10-04-00.txt all_data.txt
 ```
 
----
+***
 
 ## 5. 插帧处理
 
@@ -163,14 +166,14 @@ ffmpeg -i input.avi -r 30 -filter:v "minterpolate='fps=30:mi_mode=dup'" -c:v h26
 
 ### 5.2 插帧参数说明
 
-| 参数 | 说明 |
-|------|------|
-| `-r 30` | 输出帧率为30fps |
-| `mi_mode=mci` | 中值光流插值（推荐） |
-| `mi_mode=dup` | 帧复制模式（最快） |
-| `mi_mode=blend` | 帧混合模式（平滑） |
+| 参数              | 说明         |
+| --------------- | ---------- |
+| `-r 30`         | 输出帧率为30fps |
+| `mi_mode=mci`   | 中值光流插值（推荐） |
+| `mi_mode=dup`   | 帧复制模式（最快）  |
+| `mi_mode=blend` | 帧混合模式（平滑）  |
 
----
+***
 
 ## 6. 格式转换
 
@@ -206,7 +209,7 @@ for %%f in (*.avi) do (
 )
 ```
 
----
+***
 
 ## 7. 损坏文件处理
 
@@ -237,7 +240,7 @@ ffmpeg -i input.avi -t 00:10:00 -c copy first_10min.avi
 ffmpeg -i input.avi -ss 00:05:00 -c copy from_5min.avi
 ```
 
----
+***
 
 ## 8. 部分块未压缩处理
 
@@ -295,7 +298,7 @@ copy /b *.txt all_data.txt
 echo 处理完成！
 ```
 
----
+***
 
 ## 9. 完整处理流程示例
 
@@ -389,6 +392,7 @@ pause
 ```
 
 **使用方法**：
+
 1. 在 `extracted` 目录下创建 `file_list.txt`，内容示例：
    ```
    file '2024-01-15_10-00-00.avi'
@@ -485,7 +489,7 @@ pause
 6. 运行 03_convert_to_mp4.bat → 转换为MP4（可选）
 ```
 
----
+***
 
 ## 10. 常见问题解决
 
@@ -494,6 +498,7 @@ pause
 **问题**：执行 `ffmpeg` 时提示"不是内部或外部命令"
 
 **解决方案**：
+
 1. 确认 FFmpeg 已正确安装
 2. 将 FFmpeg 目录添加到系统环境变量 PATH
 3. 重启命令提示符
@@ -503,6 +508,7 @@ pause
 **问题**：`Invalid data found when processing input`
 
 **解决方案**：
+
 1. 检查 `file_list.txt` 中的文件路径是否正确
 2. 使用 `-safe 0` 参数
 3. 确保所有视频文件格式一致
@@ -512,6 +518,7 @@ pause
 **问题**：插帧处理时间过长
 
 **解决方案**：
+
 1. 使用 `-preset fast` 参数
 2. 如果有NVIDIA显卡，使用GPU加速：`-c:v h264_nvenc`
 3. 降低输出分辨率：`-vf scale=1280:720`
@@ -521,6 +528,7 @@ pause
 **问题**：测试时发现数据与视频不匹配
 
 **解决方案**：
+
 1. 确保合并txt文件时顺序正确
 2. 检查是否有缺失的块
 3. 使用时间戳进行对齐
@@ -530,11 +538,12 @@ pause
 **问题**：7z解压时提示"数据错误"
 
 **解决方案**：
+
 1. 尝试使用 `7z t` 命令测试文件完整性
 2. 如果是最后一个块损坏，可能是断电导致，可跳过该块
 3. 使用 `7z x -y` 强制解压可恢复的部分
 
----
+***
 
 ## 11. 处理脚本集合
 
@@ -860,13 +869,13 @@ pause
 
 #### 脚本参数说明
 
-| 参数 | 默认值 | 说明 |
-|------|--------|------|
-| `FPS` | 30 | 目标帧率 |
-| `CRF` | 23 | 视频质量（0-51，越小质量越高） |
-| `OUTPUT_NAME` | output_interpolated | 输出文件名 |
-| `USE_GPU` | 1 | 是否使用GPU加速（需安装支持CUDA的FFmpeg） |
-| `USE_DAIN` | 0 | 是否使用DAIN-APP高质量插帧（需单独安装） |
+| 参数            | 默认值                  | 说明                          |
+| ------------- | -------------------- | --------------------------- |
+| `FPS`         | 30                   | 目标帧率                        |
+| `CRF`         | 23                   | 视频质量（0-51，越小质量越高）           |
+| `OUTPUT_NAME` | output\_interpolated | 输出文件名                       |
+| `USE_GPU`     | 1                    | 是否使用GPU加速（需安装支持CUDA的FFmpeg） |
+| `USE_DAIN`    | 0                    | 是否使用DAIN-APP高质量插帧（需单独安装）    |
 
 #### 使用建议
 
@@ -874,7 +883,7 @@ pause
 2. **高质量模式**：`USE_GPU=0`, `USE_DAIN=1` - 使用DAIN-APP，插帧质量更高但速度较慢
 3. **兼容性模式**：`USE_GPU=0`, `USE_DAIN=0` - 纯CPU处理，兼容性最好但最慢
 
----
+***
 
 #### 如何安装支持CUDA的FFmpeg
 
@@ -906,7 +915,7 @@ make -j$(nproc)
 make install
 ```
 
----
+***
 
 #### 验证GPU加速是否生效
 
@@ -917,6 +926,7 @@ ffmpeg -encoders | findstr nvenc
 ```
 
 正常输出应包含：
+
 ```
  V..... h264_nvenc           NVIDIA NVENC H.264 encoder (codec h264)
  V..... hevc_nvenc           NVIDIA NVENC HEVC encoder (codec hevc)
@@ -929,6 +939,7 @@ ffmpeg -hwaccels
 ```
 
 正常输出应包含：
+
 ```
 cuda
 ```
@@ -943,6 +954,7 @@ frame=   50 fps= 30 q=23.0 size=    1024kB time=00:00:01.66 bitrate=5053.5kbits/
 ```
 
 > **注意**：使用GPU加速需要满足以下条件：
+>
 > - NVIDIA显卡（Kepler架构及以上，建议GTX 10系列及更高）
 > - 安装最新的NVIDIA驱动
 > - 安装支持CUDA的FFmpeg版本
@@ -998,22 +1010,22 @@ pause
 6. 运行 03_convert_to_mp4.bat → 转换为MP4（可选）
 ```
 
----
+***
 
 ## 附录：常用命令速查表
 
-| 操作 | 命令 |
-|------|------|
-| 解压单个文件 | `7z x file.7z` |
-| 批量解压 | `7z x *.7z -o"output"` |
-| 视频拼接 | `ffmpeg -f concat -i list.txt -c copy out.avi` |
+| 操作       | 命令                                                      |
+| -------- | ------------------------------------------------------- |
+| 解压单个文件   | `7z x file.7z`                                          |
+| 批量解压     | `7z x *.7z -o"output"`                                  |
+| 视频拼接     | `ffmpeg -f concat -i list.txt -c copy out.avi`          |
 | 插帧到30fps | `ffmpeg -i in.avi -r 30 -filter:v minterpolate out.avi` |
-| AVI转MP4 | `ffmpeg -i in.avi -c:v libx264 -crf 23 out.mp4` |
-| MP4转AVI | `ffmpeg -i in.mp4 -c:v mjpeg out.avi` |
-| 修复损坏视频 | `ffmpeg -i broken.avi -c:v copy fixed.avi` |
+| AVI转MP4  | `ffmpeg -i in.avi -c:v libx264 -crf 23 out.mp4`         |
+| MP4转AVI  | `ffmpeg -i in.mp4 -c:v mjpeg out.avi`                   |
+| 修复损坏视频   | `ffmpeg -i broken.avi -c:v copy fixed.avi`              |
 
----
+***
 
-**文档版本**：v1.0  
-**适用系统**：Windows 10/11  
+**文档版本**：v1.0\
+**适用系统**：Windows 10/11\
 **最后更新**：2024年1月

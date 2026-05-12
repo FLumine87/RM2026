@@ -54,6 +54,11 @@ private:
   const int flush_interval_frames_ = 90;  // 每90帧刷新一次
   int flush_counter_;
   
+  // 文件自动清理相关
+  const int max_file_count_ = 60;  // 最多保留30个文件（约30分钟），超过后自动删除最早的
+  int tracked_file_count_;  // 追踪当前文件数量，避免每次都遍历文件夹
+  void clean_old_files();
+  
   void init(const cv::Mat & img);
   void save_to_file();
   void create_new_block();

@@ -15,13 +15,27 @@ namespace tools
 {
 Recorder::Recorder(double fps, bool enabled) 
     : init_(false), enabled_(enabled), fps_(fps), text_fps_(fps * 2), queue_(1), 
-      stop_thread_(false), block_frame_counter_(0), flush_counter_(0)
+      stop_thread_(false), block_frame_counter_(0), flush_counter_(0), tracked_file_count_(0)
 {
   start_time_ = std::chrono::steady_clock::now();
   last_time_ = start_time_;
   last_text_time_ = start_time_;
   folder_path_ = "records";
   std::filesystem::create_directory(folder_path_);
+  
+  // 初始化时统计已有文件数量
+  namespace fs = std::filesystem;
+  try {
+    for (const auto& entry : fs::directory_iterator(folder_path_)) {
+      if (entry.is_regular_file() && entry.path().extension() == ".avi") {
+        tracked_file_count_++;
+      }
+    }
+    tools::logger()->info("Found {} existing recording files in records folder", tracked_file_count_);
+  } catch (const fs::filesystem_error& e) {
+    tools::logger()->warn("Error counting existing files: {}", e.what());
+    tracked_file_count_ = 0;
+  }
   
   // 生成初始文件名
   auto file_name = fmt::format("{:%Y-%m-%d_%H-%M-%S}", std::chrono::system_clock::now());
@@ -90,6 +104,9 @@ void Recorder::save_to_file()
 
 void Recorder::create_new_block()
 {
+  // 创建新块前先清理旧文件
+  clean_old_files();
+  
   auto file_name = fmt::format("{:%Y-%m-%d_%H-%M-%S}", std::chrono::system_clock::now());
   video_path_ = fmt::format("{}/{}.avi", folder_path_, file_name);
   text_path_ = fmt::format("{}/{}.txt", folder_path_, file_name);
@@ -212,6 +229,63 @@ void Recorder::init(const cv::Mat & img)
                         fps_, fourcc_ == cv::VideoWriter::fourcc('H', '2', '6', '4') ? "H264" : "MJPG");
   
   init_ = true;
+}
+
+void Recorder::clean_old_files()
+{
+  namespace fs = std::filesystem;
+  
+  // 优化：使用计数器追踪，只在文件数量接近限制时才遍历清理
+  // 每创建新块时计数+1，当计数达到阈值时才真正遍历文件系统
+  if (tracked_file_count_ < max_file_count_) {
+    tracked_file_count_++;
+    return;
+  }
+  
+  // 达到阈值，执行真正的清理
+  try {
+    std::vector<fs::path> avi_files;
+    
+    // 只收集 avi 文件（txt 会根据 avi 的 stem 名称删除）
+    for (const auto& entry : fs::directory_iterator(folder_path_)) {
+      if (entry.is_regular_file() && entry.path().extension() == ".avi") {
+        avi_files.push_back(entry.path());
+      }
+    }
+    
+    int current_count = static_cast<int>(avi_files.size());
+    
+    if (current_count > max_file_count_) {
+      std::sort(avi_files.begin(), avi_files.end(), 
+                [](const fs::path& a, const fs::path& b) {
+                  return fs::last_write_time(a) < fs::last_write_time(b);
+                });
+      
+      int to_delete = current_count - max_file_count_;
+      
+      for (int i = 0; i < to_delete; ++i) {
+        auto avi_path = avi_files[i];
+        auto txt_path = avi_path.parent_path() / (avi_path.stem().string() + ".txt");
+        
+        if (fs::exists(avi_path)) {
+          fs::remove(avi_path);
+        }
+        if (fs::exists(txt_path)) {
+          fs::remove(txt_path);
+        }
+      }
+      
+      tools::logger()->info("Cleaned {} old recording files, remaining: {}", 
+                           to_delete, max_file_count_);
+    }
+    
+    // 重置计数器：当前文件数量就是 max_file_count_
+    tracked_file_count_ = max_file_count_;
+    
+  } catch (const fs::filesystem_error& e) {
+    tools::logger()->warn("Filesystem error during clean_old_files: {}", e.what());
+    tracked_file_count_ = 0;  // 出错时重置，下次再检查
+  }
 }
 
 }  // namespace tools

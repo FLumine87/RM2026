@@ -1,11 +1,17 @@
 #!/bin/bash
 
-sleep 5
-cd "$(dirname "$0")"
+sleep 3
 
-# 使用 xterm 打开终端窗口运行 watchdog
-# -hold 保持终端窗口不关闭
-# -e 指定要执行的命令
-xterm -hold -e "bash watchdog.sh"
+# 终端1：watchdog
+WATCHDOG_COMMANDS="
+cd \"$(dirname "$0")\"
+./watchdog.sh
+bash
+"
 
-# sed -i 's/\r$//' /home/a/sp_vision_25-main_2/sp_vision_25-main/autostart.sh
+# 启动终端
+gnome-terminal --window --title="Watchdog" -- bash -c "$WATCHDOG_COMMANDS"
+
+echo "已启动 Watchdog 终端"
+
+# sed -i 's/\r$//' ./autostart.sh
