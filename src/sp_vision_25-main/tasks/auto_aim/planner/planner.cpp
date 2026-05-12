@@ -264,76 +264,78 @@ void Planner::precompute_switch_events(Target& target, double bullet_speed, doub
     int num_key_times = 2;
     
     std::vector<std::pair<int, double>> switches;  // (切换时间idx, 角度变化量)
-    int last_armor_idx = -1;
-    double last_yaw = 0, last_pitch = 0;
     
     for (int i = 0; i < num_key_times; i++) {
         double key_time = key_times[i];
         int key_idx = static_cast<int>(key_time / DT);
         
-        // 向左搜索最近的切换点
-        for (int dt = 1; dt <= 500; dt++) {
-            int t = key_idx - dt;
-            if (t < TIME_MIN) break;
-            
-            Target target_t = target;
-            target_t.predict(t * DT + fly_time);
-            
-            int armor_idx;
-            Eigen::Matrix<double, 2, 1> yp;
-            try {
-                yp = aim(target_t, bullet_speed, armor_idx, false);
-            } catch (...) {
-                continue;
-            }
-            
-            if (last_armor_idx != -1 && armor_idx != last_armor_idx) {
-                double delta_yaw = std::abs(yp(0) - last_yaw);
-                double delta_pitch = std::abs(yp(1) - last_pitch);
-                double angle_change = std::sqrt(delta_yaw * delta_yaw + delta_pitch * delta_pitch);
-                switches.push_back({t, angle_change});
-                last_armor_idx = armor_idx;
-                last_yaw = yp(0);
-                last_pitch = yp(1);
-                break;  // 找到后停止搜索
-            }
-            last_armor_idx = armor_idx;
-            last_yaw = yp(0);
-            last_pitch = yp(1);
-        }
+        int left = key_idx;
+        int right = key_idx;
+        int left_armor_idx = -1, right_armor_idx = -1;
+        double left_yaw = 0, left_pitch = 0;
+        double right_yaw = 0, right_pitch = 0;
         
-        // 重置状态，继续向右搜索
-        last_armor_idx = -1;
+        bool left_found = false, right_found = false;
         
-        // 向右搜索最近的切换点
-        for (int dt = 1; dt <= 500; dt++) {
-            int t = key_idx + dt;
-            if (t > TIME_MAX) break;
-            
-            Target target_t = target;
-            target_t.predict(t * DT + fly_time);
-            
-            int armor_idx;
-            Eigen::Matrix<double, 2, 1> yp;
-            try {
-                yp = aim(target_t, bullet_speed, armor_idx, false);
-            } catch (...) {
-                continue;
+        while (right - left < 500) {
+            // 向左搜索（若未找到切换点则继续）
+            if (!left_found) {
+                Target target_t = target;
+                target_t.predict(left * DT + fly_time);
+                
+                int armor_idx;
+                Eigen::Matrix<double, 2, 1> yp;
+                try {
+                    yp = aim(target_t, bullet_speed, armor_idx, false);
+                } catch (...) {
+                    left--;
+                    continue;
+                }
+                
+                if (left_armor_idx != -1 && armor_idx != left_armor_idx) {
+                    double delta_yaw = std::abs(yp(0) - left_yaw);
+                    double delta_pitch = std::abs(yp(1) - left_pitch);
+                    double angle_change = std::sqrt(delta_yaw * delta_yaw + delta_pitch * delta_pitch);
+                    switches.push_back({left, angle_change});
+                    left_found = true;
+                }
+                left_armor_idx = left;
+                left_yaw = yp(0);
+                left_pitch = yp(1);
+                left--;
             }
             
-            if (last_armor_idx != -1 && armor_idx != last_armor_idx) {
-                double delta_yaw = std::abs(yp(0) - last_yaw);
-                double delta_pitch = std::abs(yp(1) - last_pitch);
-                double angle_change = std::sqrt(delta_yaw * delta_yaw + delta_pitch * delta_pitch);
-                switches.push_back({t, angle_change});
-                last_armor_idx = armor_idx;
-                last_yaw = yp(0);
-                last_pitch = yp(1);
-                break;  // 找到后停止搜索
+            // 向右搜索（若未找到切换点则继续）
+            if (!right_found) {
+                Target target_t = target;
+                target_t.predict(right * DT + fly_time);
+                
+                int armor_idx;
+                Eigen::Matrix<double, 2, 1> yp;
+                try {
+                    yp = aim(target_t, bullet_speed, armor_idx, false);
+                } catch (...) {
+                    right++;
+                    continue;
+                }
+                
+                if (right_armor_idx != -1 && armor_idx != right_armor_idx) {
+                    double delta_yaw = std::abs(yp(0) - right_yaw);
+                    double delta_pitch = std::abs(yp(1) - right_pitch);
+                    double angle_change = std::sqrt(delta_yaw * delta_yaw + delta_pitch * delta_pitch);
+                    switches.push_back({right, angle_change});
+                    right_found = true;
+                }
+                right_armor_idx = right;
+                right_yaw = yp(0);
+                right_pitch = yp(1);
+                right++;
             }
-            last_armor_idx = armor_idx;
-            last_yaw = yp(0);
-            last_pitch = yp(1);
+            
+            // 若两个指针都找到切换点，break
+            if (left_found && right_found) {
+                break;
+            }
         }
     }
     
@@ -384,8 +386,8 @@ void Planner::precompute_switch_events(Target& target, double bullet_speed, doub
             
             SwitchEvent event;
             event.t_switch = chosen_switch;
-            event.t_start = std::max(TIME_MIN, chosen_switch - half_steps);
-            event.t_end = std::min(TIME_MAX, chosen_switch + half_steps);
+            event.t_start = chosen_switch - half_steps;
+            event.t_end = chosen_switch + half_steps;
             
             Target target_start = target;
             target_start.predict(event.t_start * DT + fly_time);
@@ -620,8 +622,8 @@ PlanDebug Planner::debug(Target target, double bullet_speed)
           continue;
         }
         event.t_switch = t;
-        event.t_start = std::max(TIME_MIN, t - half_steps);
-        event.t_end = std::min(TIME_MAX, t + half_steps);
+        event.t_start = t - half_steps;
+        event.t_end = t + half_steps;
         
         // 获取过渡段起点状态（切换点前的装甲板）
         Target target_start = target_predicted;
