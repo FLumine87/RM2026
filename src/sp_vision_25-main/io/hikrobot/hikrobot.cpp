@@ -140,6 +140,10 @@ void HikRobot::capture_start()
         {PixelType_Gvsp_BayerBG8, cv::COLOR_BayerBG2RGB}};
       cv::cvtColor(img, dst_image, type_map.at(pixel_type));
       img = dst_image;
+      double gain_compensation = 1.5;
+      if (gain_compensation != 1.0) {
+        img.convertTo(img, -1, gain_compensation, 0);
+      }
 
       // cv::rotate(img, img, cv::ROTATE_180);
 
