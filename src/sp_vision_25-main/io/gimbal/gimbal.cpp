@@ -181,9 +181,24 @@ void Gimbal::read_thread()
   uint8_t temp_raw[256];
   int crc_error_cnt = 0;
   int header_error_cnt = 0;
+  int error_count = 0;
 
   while (!quit_) {
-    int n = serial_.read(temp_raw, sizeof(temp_raw));
+    if (error_count > 5000) {
+      error_count = 0;
+      tools::logger()->warn("[Gimbal] Too many errors, attempting to reconnect...");
+      reconnect();
+      continue;
+    }
+
+    int n;
+    try {
+      n = serial_.read(temp_raw, sizeof(temp_raw));
+    } catch (const std::exception & e) {
+      error_count++;
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      continue;
+    }
     if (n <= 0) {
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
       continue;
