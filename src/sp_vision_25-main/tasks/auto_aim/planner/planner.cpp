@@ -220,7 +220,20 @@ Plan Planner::plan(Target target, double bullet_speed, double current_yaw, doubl
       }
   }
   
+  // 前哨站特殊处理：判断是否真正收敛
+  bool is_outpost = (target.name == ArmorName::outpost);
+  bool is_outpost_converged = true;
+  if (is_outpost) {
+    is_outpost_converged = is_outpost_truly_converged(target);
+  }
+
+  // 最终开火决策
   plan.fire = gimbal_converged && fireable;
+  
+  // 前哨站额外约束：未收敛时禁止开火
+  if (is_outpost && !is_outpost_converged) {
+    plan.fire = false;
+  }
 
   // 用于debug可视化：只更新一次，避免被内部扫描覆盖
   try {
@@ -764,6 +777,27 @@ PlanDebug Planner::debug(Target target, double bullet_speed)
   }
 
   return debug_result;
+}
+
+// 前哨站真正收敛判断函数（可在此函数内修改约束条件）
+bool Planner::is_outpost_truly_converged(const Target& target) const
+{
+  // 只有前哨站才需要判断
+  if (target.name != ArmorName::outpost) {
+    return true;
+  }
+  
+  auto ekf_x = target.ekf_x();
+  
+  // 收敛判断阈值
+  const double HEIGHT_DIFF_THRESHOLD = 0.01; // 1cm，判断高度差是否明显偏离0
+  
+  double l = ekf_x[9];  // 装甲板 1 高度差
+  double h = ekf_x[10]; // 装甲板 2 高度差
+  
+  // 只有两个高度差都明显偏离0，才认为已经看过完整的三个装甲板并收敛
+  return (std::abs(l) > HEIGHT_DIFF_THRESHOLD) && 
+         (std::abs(h) > HEIGHT_DIFF_THRESHOLD);
 }
 
 }  // namespace auto_aim

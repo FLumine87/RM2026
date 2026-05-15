@@ -128,6 +128,9 @@ private:
   void precompute_switch_events(Target& target, double bullet_speed, double yaw0, double fly_time, double gimbal_delay);
   State get_state_at_time(Target& target, double bullet_speed, double yaw0, double time, double fly_time);
   State get_follow_state(Target& target, double bullet_speed, double yaw0, int t, double fly_time);
+  
+  // 判断前哨站是否真正收敛（可在此函数内修改约束条件）
+  bool is_outpost_truly_converged(const Target& target) const;
 };
 
 }  // namespace auto_aim

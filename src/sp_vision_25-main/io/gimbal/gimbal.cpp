@@ -6,6 +6,7 @@
 #include "tools/logger.hpp"
 #include "tools/math_tools.hpp"
 #include "tools/yaml.hpp"
+#include <vector>
 
 namespace io
 {
@@ -137,6 +138,7 @@ void Gimbal::send(io::VisionToGimbal VisionToGimbal)
     serial_.write(reinterpret_cast<uint8_t *>(&tx_data_), sizeof(tx_data_));
   } catch (const std::exception & e) {
     tools::logger()->warn("[Gimbal] Failed to write serial: {}", e.what());
+    reconnect();
   }
 }
 
@@ -158,6 +160,7 @@ void Gimbal::send(
     serial_.write(reinterpret_cast<uint8_t *>(&tx_data_), sizeof(tx_data_));
   } catch (const std::exception & e) {
     tools::logger()->warn("[Gimbal] Failed to write serial: {}", e.what());
+    reconnect();
   }
 }
 
@@ -166,7 +169,7 @@ bool Gimbal::read(uint8_t * buffer, size_t size)
   try {
     return serial_.read(buffer, size) == size;
   } catch (const std::exception & e) {
-    // tools::logger()->warn("[Gimbal] Failed to read serial: {}", e.what());
+    tools::logger()->warn("[Gimbal] Failed to read serial: {}", e.what());
     return false;
   }
 }
@@ -265,6 +268,14 @@ void Gimbal::read_thread()
       } else {
         header_error_cnt++;
         buffer.erase(buffer.begin());
+      }
+
+      if (header_error_cnt > 100 || crc_error_cnt > 100) {
+        tools::logger()->warn("[Gimbal] error count exceeded 100, reconnecting...");
+        crc_error_cnt = 0;
+        header_error_cnt = 0;
+        buffer.clear();
+        reconnect();
       }
     }
 
